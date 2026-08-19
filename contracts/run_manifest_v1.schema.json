@@ -39,8 +39,8 @@
           "path": {
             "type": "string",
             "minLength": 1,
-            "description": "Run-relative POSIX-style path. Backslashes, POSIX absolute paths, Windows drive prefixes, and dot/dot-dot path segments are forbidden.",
-            "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$)).+$"
+            "description": "Canonical portable run-relative artifact path: lowercase ASCII segments separated by '/', characters [a-z0-9._-] only, no leading/trailing dot segment form, and no Windows reserved device basename. This excludes absolute/drive/UNC/backslash paths, dot/dot-dot traversal, ADS ':', spaces, trailing dot/space aliases, repeated separators, Unicode/case-fold aliases, and reserved CON/PRN/AUX/NUL/COM1-9/LPT1-9 names (including extensions).",
+            "pattern": "^(?!.*(?:^|/)(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.][a-z0-9._-]+)?(?:/|$))[a-z0-9_-](?:[a-z0-9._-]*[a-z0-9_-])?(?:/[a-z0-9_-](?:[a-z0-9._-]*[a-z0-9_-])?)*$"
           },
           "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
         }
