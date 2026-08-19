@@ -6,6 +6,12 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from cspm.contracts_reference import (
+    validate_run_trace_composition,
+    validate_trace_manifest_semantics,
+    validate_trace_payload_summary,
+)
+
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _GIT40 = re.compile(r"^[0-9a-f]{40}$")
 
@@ -133,196 +139,15 @@ def validate_manifest_shape(manifest: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _shape_matches(value: Any, expected: list[int]) -> bool:
-    return (
-        isinstance(value, list)
-        and len(value) == len(expected)
-        and all(isinstance(x, int) and x >= 0 for x in value)
-        and value == expected
-    )
-
-
-def validate_trace_manifest_semantics(manifest: dict[str, Any]) -> list[str]:
-    """Cross-field TraceArtifact v1 manifest rules.
-
-    JSON-schema validation is required separately. Manifest-derived array shapes and
-    sequence stats are metadata only: production readers must recompute them from
-    actual loaded tensors before analysis.
-    """
-    errors: list[str] = []
-
-    git_sha = manifest.get("git_sha")
-    if not isinstance(git_sha, str) or _GIT40.fullmatch(git_sha) is None:
-        errors.append("git_sha_must_be_full_40_hex")
-
-    signature_dim = manifest.get("signature_dim")
-    projection = manifest.get("projection")
-    if not isinstance(projection, dict):
-        errors.append("projection_must_be_object")
-    elif projection.get("output_dim") != signature_dim:
-        errors.append("projection_output_dim_must_equal_signature_dim")
-
-    num_layers = manifest.get("num_layers")
-    selected_layers = manifest.get("selected_layers")
-    if not isinstance(selected_layers, list) or not selected_layers:
-        errors.append("selected_layers_must_be_nonempty")
-        selected_layer_count: int | None = None
-    else:
-        selected_layer_count = len(selected_layers)
-        if len(selected_layers) != len(set(selected_layers)):
-            errors.append("selected_layers_must_be_unique")
-        if isinstance(num_layers, int) and num_layers > 0:
-            if any(not isinstance(x, int) or x < 0 or x >= num_layers for x in selected_layers):
-                errors.append("selected_layers_out_of_range")
-
-    num_tokens = manifest.get("num_tokens")
-    num_sequences = manifest.get("num_sequences")
-    if isinstance(num_tokens, int) and isinstance(num_sequences, int):
-        if num_tokens == 0 and num_sequences != 0:
-            errors.append("zero_token_trace_requires_zero_sequences")
-        if num_tokens > 0 and num_sequences < 1:
-            errors.append("nonempty_trace_requires_at_least_one_sequence")
-        if num_tokens >= 0 and num_sequences > num_tokens:
-            errors.append("num_sequences_must_not_exceed_num_tokens")
-
-    chunks = manifest.get("chunks")
-    if not isinstance(chunks, list):
-        errors.append("chunks_must_be_list")
-        chunks = []
-    if isinstance(num_tokens, int):
-        if num_tokens > 0 and not chunks:
-            errors.append("nonempty_trace_requires_chunks")
-        if num_tokens == 0 and chunks:
-            errors.append("zero_token_trace_must_not_have_chunks")
-
-    seen_paths: set[str] = set()
-    token_sum = 0
-    for expected_index, chunk in enumerate(chunks):
-        if not isinstance(chunk, dict):
-            errors.append(f"chunk_{expected_index}_must_be_object")
-            continue
-        index = chunk.get("index")
-        path = chunk.get("path")
-        tokens = chunk.get("tokens")
-        if index != expected_index:
-            errors.append("chunk_indices_must_be_contiguous_from_zero")
-        expected_path = f"trace/chunk_{expected_index:05d}.safetensors"
-        if path != expected_path:
-            errors.append(f"chunk_path_index_mismatch:{expected_index}")
-        if isinstance(path, str):
-            if path in seen_paths:
-                errors.append("duplicate_chunk_path")
-            seen_paths.add(path)
-        if not isinstance(tokens, int) or tokens <= 0:
-            errors.append(f"chunk_tokens_must_be_positive:{expected_index}")
-        else:
-            token_sum += tokens
-    if isinstance(num_tokens, int) and token_sum != num_tokens:
-        errors.append("chunk_token_sum_must_equal_num_tokens")
-
-    arrays = manifest.get("arrays")
-    if not isinstance(arrays, dict):
-        arrays = {}
-
-    array_shapes = manifest.get("array_shapes")
-    if not isinstance(array_shapes, dict):
-        errors.append("array_shapes_must_be_object")
-        array_shapes = {}
-    if isinstance(num_tokens, int):
-        for name in ("token_ids", "sequence_ids", "positions"):
-            if not _shape_matches(array_shapes.get(name), [num_tokens]):
-                errors.append(f"{name}_shape_mismatch")
-        if isinstance(selected_layer_count, int) and isinstance(signature_dim, int):
-            expected_state_shape = [num_tokens, selected_layer_count, signature_dim]
-            if not _shape_matches(array_shapes.get("state_signatures"), expected_state_shape):
-                errors.append("state_signatures_shape_mismatch")
-
-    sequence_stats = manifest.get("sequence_stats")
-    if not isinstance(sequence_stats, dict):
-        errors.append("sequence_stats_must_be_object")
-    elif isinstance(num_sequences, int):
-        if sequence_stats.get("unique_count") != num_sequences:
-            errors.append("sequence_unique_count_must_equal_num_sequences")
-        if num_sequences == 0:
-            if sequence_stats.get("min_id") is not None or sequence_stats.get("max_id") is not None:
-                errors.append("empty_sequence_ids_require_null_min_max")
-        else:
-            if sequence_stats.get("min_id") != 0:
-                errors.append("sequence_min_id_must_equal_zero")
-            if sequence_stats.get("max_id") != num_sequences - 1:
-                errors.append("sequence_max_id_must_equal_num_sequences_minus_one")
-        if sequence_stats.get("ids_contiguous_zero_based") is not True:
-            errors.append("sequence_ids_must_be_contiguous_zero_based")
-        if sequence_stats.get("positions_zero_based_contiguous") is not True:
-            errors.append("positions_must_be_zero_based_contiguous")
-        if sequence_stats.get("sequences_interleaved") is not False:
-            errors.append("sequences_must_not_interleave")
-
-    has_router = manifest.get("has_router_trace")
-    router = manifest.get("router")
-    if has_router is True:
-        if "expert_ids" not in arrays or "expert_weights" not in arrays:
-            errors.append("router_trace_requires_expert_arrays")
-        if not isinstance(router, dict):
-            errors.append("router_trace_requires_router_metadata")
-        else:
-            num_experts = router.get("num_experts")
-            top_k = router.get("top_k")
-            tolerance = router.get("weight_sum_tolerance")
-            if not isinstance(num_experts, int) or num_experts < 1:
-                errors.append("router_num_experts_invalid")
-            if not isinstance(top_k, int) or top_k < 1:
-                errors.append("router_top_k_invalid")
-            elif isinstance(num_experts, int) and top_k > num_experts:
-                errors.append("router_top_k_exceeds_num_experts")
-            if not isinstance(tolerance, (int, float)) or tolerance <= 0 or tolerance > 0.1:
-                errors.append("router_weight_sum_tolerance_invalid")
-            if (
-                isinstance(num_tokens, int)
-                and isinstance(selected_layer_count, int)
-                and isinstance(top_k, int)
-                and top_k >= 1
-            ):
-                expected_expert_shape = [num_tokens, selected_layer_count, top_k]
-                if not _shape_matches(array_shapes.get("expert_ids"), expected_expert_shape):
-                    errors.append("expert_ids_shape_mismatch")
-                if not _shape_matches(array_shapes.get("expert_weights"), expected_expert_shape):
-                    errors.append("expert_weights_shape_mismatch")
-                if "router_entropy" in arrays and not _shape_matches(
-                    array_shapes.get("router_entropy"), [num_tokens, selected_layer_count]
-                ):
-                    errors.append("router_entropy_shape_mismatch")
-    elif has_router is False:
-        if router is not None:
-            errors.append("router_metadata_forbidden_without_router_trace")
-        for name in ("expert_ids", "expert_weights", "router_entropy"):
-            if name in arrays:
-                errors.append("router_arrays_forbidden_without_router_trace")
-                break
-        for name in ("expert_ids", "expert_weights", "router_entropy"):
-            if name in array_shapes:
-                errors.append("router_array_shapes_forbidden_without_router_trace")
-                break
-
-    return errors
-
-
-def validate_trace_payload_summary(
-    manifest: dict[str, Any],
-    *,
-    observed_array_shapes: dict[str, list[int]],
-    observed_sequence_stats: dict[str, Any],
-) -> list[str]:
-    """Validate recomputed payload facts against the manifest.
-
-    S2/S6 production readers compute these values from loaded tensors. This helper
-    prevents consumers from trusting producer-supplied shape/cardinality metadata.
-    """
-    errors: list[str] = []
-    declared_shapes = manifest.get("array_shapes")
-    if not isinstance(declared_shapes, dict) or observed_array_shapes != declared_shapes:
-        errors.append("payload_array_shapes_do_not_match_manifest")
-    declared_stats = manifest.get("sequence_stats")
-    if not isinstance(declared_stats, dict) or observed_sequence_stats != declared_stats:
-        errors.append("payload_sequence_stats_do_not_match_manifest")
-    return errors
+__all__ = [
+    "build_manifest",
+    "canonical_json_bytes",
+    "sha256_bytes",
+    "sha256_file",
+    "sha256_json",
+    "validate_manifest_shape",
+    "validate_run_trace_composition",
+    "validate_trace_manifest_semantics",
+    "validate_trace_payload_summary",
+    "write_canonical_json",
+]
