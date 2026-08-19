@@ -38,10 +38,9 @@ This project uses compact raw handoffs by default. Do not spend time generating 
 
 ## Clean-checkout bootstrap commands
 
-Until replaced by a later SOT revision:
+EXP000 is intentionally standard-library-only and does not require package installation:
 
 ```bash
-python -m pip install -e .
 python -m unittest discover -s tests -p 'test_*.py' -v
 python experiments/exp000_bootstrap/run.py --out runs/exp000/bootstrap
 ```
