@@ -14,7 +14,8 @@ from cspm.contracts_reference import (
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _GIT40 = re.compile(r"^[0-9a-f]{40}$")
-_WINDOWS_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
+_PORTABLE_PATH_SEGMENT = re.compile(r"^[a-z0-9_-](?:[a-z0-9._-]*[a-z0-9_-])?$")
+_WINDOWS_RESERVED_STEM = re.compile(r"^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$")
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -83,14 +84,24 @@ def build_manifest(
 
 
 def _is_safe_run_relative_path(value: str) -> bool:
-    if (
-        not value
-        or value.startswith(("/", "\\"))
-        or "\\" in value
-        or _WINDOWS_DRIVE_PREFIX.match(value) is not None
-    ):
+    """Accept only the canonical cross-platform artifact path subset.
+
+    Lowercase ASCII path segments make byte identity unambiguous across POSIX and
+    case-insensitive Windows filesystems. The segment grammar also excludes
+    absolute/drive/UNC paths, backslashes, ADS colons, spaces, dot traversal,
+    repeated separators, trailing dot/space aliases, and Unicode normalization
+    aliases. Windows reserved device basenames are rejected even with extensions.
+    """
+    if not value:
         return False
-    return all(segment not in {".", ".."} for segment in value.split("/"))
+    segments = value.split("/")
+    if any(_PORTABLE_PATH_SEGMENT.fullmatch(segment) is None for segment in segments):
+        return False
+    for segment in segments:
+        stem = segment.split(".", 1)[0]
+        if _WINDOWS_RESERVED_STEM.fullmatch(stem) is not None:
+            return False
+    return True
 
 
 def validate_manifest_shape(manifest: dict[str, Any]) -> list[str]:
