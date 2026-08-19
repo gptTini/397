@@ -137,6 +137,37 @@ class Exp000IntegrationTests(unittest.TestCase):
             self.assertFalse((out / "COMPLETE").exists())
             self.assertFalse((out / ".COMPLETE.tmp").exists())
 
+    def test_replace_failure_cleans_partial_complete_tmp(self) -> None:
+        module = _load_exp000_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "replace_failure"
+            with mock.patch.object(module.os, "replace", side_effect=OSError("injected replace failure")):
+                with self.assertRaisesRegex(OSError, "injected replace failure"):
+                    module.run(out, 397, 32)
+            self.assertFalse((out / "COMPLETE").exists())
+            self.assertFalse((out / ".COMPLETE.tmp").exists())
+
+    def test_complete_tmp_fsync_failure_cleans_partial_tmp(self) -> None:
+        module = _load_exp000_module()
+        original_fsync = module.os.fsync
+        call_count = 0
+
+        def fail_on_complete_tmp_fsync(fd):
+            nonlocal call_count
+            call_count += 1
+            # Five required run files are fsync'd first; the sixth fsync is .COMPLETE.tmp.
+            if call_count == 6:
+                raise OSError("injected COMPLETE tmp fsync failure")
+            return original_fsync(fd)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "tmp_fsync_failure"
+            with mock.patch.object(module.os, "fsync", side_effect=fail_on_complete_tmp_fsync):
+                with self.assertRaisesRegex(OSError, "injected COMPLETE tmp fsync failure"):
+                    module.run(out, 397, 32)
+            self.assertFalse((out / "COMPLETE").exists())
+            self.assertFalse((out / ".COMPLETE.tmp").exists())
+
     def test_existing_run_directory_is_never_overwritten_or_mutated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "same_run"
