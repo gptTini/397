@@ -4,10 +4,20 @@ This document removes ambiguity between the root experiment manifest and the Tra
 
 ## Authoritative paths
 
-- `<run>/manifest.json` = **RunManifest v1** governed by `contracts/run_manifest_v1.schema.json`.
+- `<run>/manifest.json` = **RunManifest v1** governed by `contracts/run_manifest_v1.schema.json` **and** the mandatory reference pipeline `src/cspm/bootstrap.py::validate_run_manifest`.
 - `<run>/trace/manifest.json` = **TraceArtifact v1 manifest** governed by `schemas/trace-v1.schema.json` plus the cross-field semantic rules in `CSPM_SOT.yaml` and `src/cspm/contracts_reference.py`.
 - `<run>/hashes/sha256.json` = checksum index only. It never overrides either manifest.
 - `<run>/COMPLETE` = completion sentinel. Absence makes the run incomplete by default.
+
+## Root RunManifest validation pipeline
+
+A root RunManifest is accepted only after the **full mandatory pipeline** passes. JSON-Schema-only validation and partial helper validation are not sufficient substitutes.
+
+1. Apply every structural constraint frozen by `contracts/run_manifest_v1.schema.json`: root object type, exact top-level field set, required fields, constants/patterns, JSON types, non-empty strings, artifact item structure, portable path grammar, SHA formats, and `metrics` object type.
+2. Apply explicit semantic constraints that are not cleanly expressible in the current JSON Schema, including rejection of **duplicate artifact paths**.
+3. Any failure in either layer is `E110`.
+
+`src/cspm/bootstrap.py::validate_run_manifest` is the stdlib-only reference implementation of this combined pipeline. `validate_manifest_shape` is retained only as a backward-compatible alias to the same full validator; it is not a weaker validation mode. Producers and readers must not implement a separate acceptance rule that can accept a schema-invalid root manifest.
 
 ## Composition and duplicated provenance
 
@@ -55,7 +65,7 @@ All RunManifest artifact paths use one canonical cross-platform subset rather th
 ## Validation order
 
 1. Resolve run directory and required files. Missing files -> E310.
-2. Validate root RunManifest shape/schema -> E110 on violation.
+2. Run the full root RunManifest validation pipeline via `validate_run_manifest` -> E110 on any structural/schema-equivalent or semantic violation.
 3. Load `trace/manifest.json`, compute SHA-256 from its exact bytes, and verify the root artifact reference -> E320 on mismatch.
 4. Validate `trace/manifest.json` JSON schema -> E110.
 5. Apply TraceArtifact semantic validator -> E110.
