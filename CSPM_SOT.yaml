@@ -1,11 +1,11 @@
-schema_version: "2.0"
+schema_version: "2.1"
 project:
   id: "CSPM397"
   repo: "gptTini/397"
   name: "Chrono-Synaptic Program Machine"
-  status: "BOOTSTRAP_MIGRATION"
+  status: "G0_REWORK_PENDING_S6_REREVIEW"
   source_of_truth: "CSPM_SOT.yaml"
-  plan_revision: "feasibility-first-2026-08-20"
+  plan_revision: "feasibility-first-2026-08-20-r1"
 
 mission:
   research_question: >-
@@ -13,17 +13,15 @@ mission:
     state transitions and later replaced by memory + compiled macros + residual
     correction while preserving behavior and reducing real end-to-end latency?
   phase_a_goal: >-
-    Prove the phenomenon and the measurement stack before building CSPM runtime
-    components. Validate trace fidelity, artifact integrity, predictability,
-    trajectory compressibility, scaling, reproducibility, and scientific validity.
+    Prove the phenomenon and measurement stack before building CSPM runtime modules.
   phase_b_goal: >-
-    Only after scientific GO, build Synaptic Memory, Macro Compiler, ChronoRouter,
-    Residual NeuroCore, and the end-to-end runtime.
+    Only after S7 issues GO_CSPM, design and build Synaptic Memory, Macro Compiler,
+    ChronoRouter, Residual NeuroCore, and the end-to-end runtime.
   non_goals:
     - "Do not brute-force full 397B inference on weak local hardware."
     - "Do not claim success from latent similarity alone."
     - "Do not claim speedup from FLOP reduction alone."
-    - "Do not build Phase-B CSPM runtime before Phase-A scientific GO."
+    - "Do not implement or prepare Phase-B runtime modules before GO_CSPM."
 
 operating_mode:
   raw_mode: true
@@ -49,177 +47,58 @@ invariants:
   - "EVERY_RUN_HAS_CODE_CONFIG_DATA_MODEL_SEED_AND_ARTIFACT_IDENTITY"
 
 architecture_boundary:
-  only_cross_module_data_contract: "TraceArtifact v1"
+  only_cross_module_trace_contract: "TraceArtifact v1"
   rules:
-    - "S3 predictability must not import transformers or model adapters."
-    - "S4 trajectory must not import transformers or Qwen objects."
-    - "S5 experiment runner must orchestrate public interfaces, not hidden-state internals."
+    - "S3 predictability must not import transformers/model adapters."
+    - "S4 trajectory must not import transformers/Qwen objects."
+    - "S5 experiment runner orchestrates public interfaces only."
     - "S1 model/trace must not implement predictability or trajectory analysis."
-    - "Contract/schema edits are S0-owned and require review."
+    - "Contract/schema edits are S0-owned and require S6 contract review."
 
 sessions:
   S0:
     name: "ARCHITECT_ORCHESTRATOR_MERGE_CONTROLLER"
     branch: "cspm/orchestrator"
-    phase: "A+B"
-    owns:
-      - "CSPM_SOT.yaml"
-      - "AGENTS.md"
-      - "contracts/**"
-      - "schemas/**"
-      - "docs/architecture/**"
-      - "docs/contracts/**"
-      - "docs/decisions/**"
-      - "docs/experiments/**"
-      - "fixtures/spec/**"
-    responsibilities:
-      - "freeze contracts before worker implementation"
-      - "maintain gates and experiment registry"
-      - "approve dependency/public API/schema changes"
-      - "merge only reviewed work"
-      - "never reinterpret failed science as pass"
+    owns: ["CSPM_SOT.yaml", "AGENTS.md", "contracts/**", "schemas/**", "docs/architecture/**", "docs/contracts/**", "docs/decisions/**", "docs/experiments/**", "fixtures/spec/**"]
   S1:
     name: "MODEL_TRACE"
     branch: "s1/model-trace"
-    phase: "A"
-    owns:
-      - "src/cspm397/adapters/**"
-      - "src/cspm397/trace/**"
-      - "tests/unit/trace/**"
-      - "tests/integration/trace/**"
-    responsibilities:
-      - "MockModelAdapter and HuggingFaceAdapter"
-      - "token generation and hidden-state capture"
-      - "deterministic projection"
-      - "router/expert trace when available"
-      - "chunked TraceArtifact production"
+    owns: ["src/cspm397/adapters/**", "src/cspm397/trace/**", "tests/unit/trace/**", "tests/integration/trace/**"]
   S2:
     name: "ARTIFACT_PROFILER"
     branch: "s2/artifact-profiler"
-    phase: "A"
-    owns:
-      - "src/cspm397/artifacts/**"
-      - "src/cspm397/profiling/**"
-      - "tests/unit/artifacts/**"
-      - "tests/integration/artifacts/**"
-    responsibilities:
-      - "serialization/deserialization"
-      - "atomic write and resume"
-      - "SHA-256 validation"
-      - "schema validation"
-      - "runtime/memory/disk profiling"
+    owns: ["src/cspm397/artifacts/**", "src/cspm397/profiling/**", "tests/unit/artifacts/**", "tests/integration/artifacts/**"]
   S3:
     name: "PREDICTABILITY"
     branch: "s3/predictability"
-    phase: "A"
-    owns:
-      - "src/cspm397/predictability/**"
-      - "tests/unit/predictability/**"
-      - "tests/integration/predictability/**"
-    responsibilities:
-      - "sequence/prompt-level split"
-      - "Mean/Persistence/Linear-Ridge baselines before learned models"
-      - "layer x horizon predictability spectrum"
-      - "R2/cosine/NMSE/MAE and behavioral probes"
-      - "train-only normalization/fitting"
+    owns: ["src/cspm397/predictability/**", "tests/unit/predictability/**", "tests/integration/predictability/**"]
   S4:
     name: "TRAJECTORY_MDL"
     branch: "s4/trajectory-mdl"
-    phase: "A"
-    owns:
-      - "src/cspm397/trajectory/**"
-      - "tests/unit/trajectory/**"
-      - "tests/integration/trajectory/**"
-    responsibilities:
-      - "state and expert trajectory analysis"
-      - "train-only discretization"
-      - "entropy/ngram/macro discovery"
-      - "raw-bits, entropy, zlib/gzip, ngram-MDL baselines"
-      - "compression accounting including dictionary/index/metadata"
+    owns: ["src/cspm397/trajectory/**", "tests/unit/trajectory/**", "tests/integration/trajectory/**"]
   S5:
     name: "EXPERIMENT_RUNNER"
     branch: "s5/experiment-runner"
-    phase: "A"
     activation: "after Wave-1 interfaces merge"
-    owns:
-      - "src/cspm397/experiment/**"
-      - "configs/**"
-      - "tests/integration/experiment/**"
-    responsibilities:
-      - "state-machine orchestration"
-      - "resume and frozen config"
-      - "adapter -> artifact -> validation -> analyses -> decision"
-      - "must not reimplement analyzer internals"
+    owns: ["src/cspm397/experiment/**", "configs/**", "tests/integration/experiment/**"]
   S6:
     name: "SOFTWARE_QA_CI_RED_TEAM"
     branch: "s6/qa-ci"
-    phase: "A+B"
-    owns:
-      - "tests/contract/**"
-      - "tests/adversarial/**"
-      - "tests/regression/**"
-      - "scripts/check_scope.py"
-      - "scripts/validate_artifact.py"
-      - ".github/workflows/**"
-    responsibilities:
-      - "software correctness and regression"
-      - "contract/adversarial tests"
-      - "Windows + Ubuntu CI"
-      - "scope/import/dependency checks"
-      - "partial write/corruption/path/OOM/device failure testing"
+    owns: ["tests/contract/**", "tests/adversarial/**", "tests/regression/**", "scripts/check_scope.py", "scripts/validate_artifact.py", ".github/workflows/**"]
+    responsibilities: ["software correctness", "contract/adversarial/regression tests", "Windows+Ubuntu CI", "scope/import/dependency checks", "corruption/partial-write/path/device failure tests"]
   S7:
     name: "SCIENTIFIC_AUDITOR_REPRODUCIBILITY"
     branch: "s7/science-audit"
-    phase: "A+B"
-    activation: "after runnable synthetic pipeline exists; audits all scientific claims"
-    owns:
-      - "review/science/**"
-      - "tests/science/**"
-      - "decision_policy.json"
-    responsibilities:
-      - "data leakage audit"
-      - "baseline adequacy"
-      - "seed sensitivity/sample size/confidence intervals"
-      - "multiple-comparison and metric misuse audit"
-      - "projection/normalization/compression-overhead artifact audit"
-      - "independent reproduction"
+    activation: "after runnable synthetic pipeline exists"
+    owns: ["review/science/**", "tests/science/**", "decision_policy.json"]
+    responsibilities: ["leakage audit", "baseline adequacy", "seed/sample/CI audit", "metric/comparison audit", "independent reproduction", "GO_CSPM or NO_GO"]
 
-phase_b_sessions:
+phase_b:
   activation_condition: "S7 decision GO_CSPM after 35B-A3B audit"
-  modules:
-    - "Synaptic Memory"
-    - "Macro Compiler"
-    - "ChronoRouter"
-    - "Residual NeuroCore"
-    - "End-to-end Runtime"
-  rule: >-
-    Phase-B session IDs/ownership are frozen only after Phase-A GO so the design can
-    follow empirical findings instead of prematurely encoding an unverified architecture.
-  final_397_role:
-    - "offline knowledge teacher"
-    - "offline trajectory teacher"
-    - "offline macro-discovery/compiler teacher"
-    - "rare difficult-case repair teacher"
-
-waves:
-  W0:
-    sessions: ["S0"]
-    goal: "Bootstrap contracts, schemas, error taxonomy, fixtures, scope rules, CI baseline, mock pipeline"
-  W1:
-    sessions: ["S1", "S2", "S3", "S4", "S6"]
-    precondition: "G0 PASS"
-    goal: "Parallel module implementation against frozen TraceArtifact v1 and golden fixtures"
-  W2:
-    sessions: ["S5", "S6"]
-    precondition: "Wave-1 interfaces merged"
-    goal: "Synthetic end-to-end experiment pipeline"
-  W3:
-    sessions: ["S7", "S6"]
-    precondition: "Synthetic pipeline software-valid"
-    goal: "Scientific audit and decision policy freeze"
-  W4:
-    sessions: ["S0"]
-    goal: "Integration and staged model-scale experiments"
+  before_go_policy: "NO_IMPLEMENTATION_NO_PREPARATION_NO_BRANCH_TASKS"
+  modules: ["Synaptic Memory", "Macro Compiler", "ChronoRouter", "Residual NeuroCore", "End-to-end Runtime"]
+  session_ids_and_ownership: "freeze only after GO_CSPM using Phase-A evidence"
+  final_397_role: ["offline knowledge teacher", "offline trajectory teacher", "offline macro compiler teacher", "rare difficult-case repair teacher"]
 
 branch_policy:
   base: "main"
@@ -228,16 +107,33 @@ branch_policy:
   one_pr_one_responsibility: true
   worker_must_record_base_sha: true
   contract_change_requires: ["explicit S0 task", "tests", "S6 contract review", "S7 review if scientific semantics change"]
-  deprecated_branches:
-    - "cspm/tracelab"
-    - "cspm/state"
-    - "cspm/reviewer"
-    - "cspm/memory"
-    - "cspm/macro"
-    - "cspm/neurocore"
-    - "cspm/runtime"
+  deprecated_branches: ["cspm/tracelab", "cspm/state", "cspm/reviewer", "cspm/memory", "cspm/macro", "cspm/neurocore", "cspm/runtime"]
+
+manifest_authority:
+  root_run_manifest:
+    path: "<run>/manifest.json"
+    contract: "RunManifest v1"
+    schema: "contracts/run_manifest_v1.schema.json"
+    authority: "experiment/run identity, metrics, artifact references"
+  trace_manifest:
+    path: "<run>/trace/manifest.json"
+    contract: "TraceArtifact v1"
+    schema: "schemas/trace-v1.schema.json"
+    authority: "trace arrays, projection, router metadata, chunk ordering and hashes"
+  checksum_index:
+    path: "<run>/hashes/sha256.json"
+    authority: "checksum index only; never a manifest"
+  complete_sentinel: "<run>/COMPLETE"
+  composition_rule: >-
+    When a run contains TraceArtifact v1, root RunManifest artifacts MUST reference
+    trace/manifest.json and its exact hash. Duplicate hash indexes must agree.
+  path_rule: "all artifact paths are run-relative POSIX paths; absolute and .. traversal forbidden"
+  detailed_contract: "docs/contracts/MANIFEST_AUTHORITY.md"
 
 trace_artifact_v1:
+  manifest_path: "trace/manifest.json"
+  schema: "schemas/trace-v1.schema.json"
+  semantic_validator: "src/cspm/bootstrap.py::validate_trace_manifest_semantics (bootstrap reference; S2/S6 production validator must preserve behavior)"
   storage:
     tensor: ".safetensors"
     metadata: ".json"
@@ -249,99 +145,99 @@ trace_artifact_v1:
     sequence_ids: "[T]"
     positions: "[T]"
     state_signatures: "[T,L,D]"
-  optional_arrays:
+  optional_router_arrays:
     expert_ids: "[T,L,K]"
     expert_weights: "[T,L,K]"
-    router_entropy: "implementation-contract-defined"
+    router_entropy: "[T,L]"
   required_metadata:
-    - "schema_version"
-    - "run_id"
-    - "model_id"
-    - "model_revision"
-    - "git_sha"
-    - "config_hash"
-    - "seed"
-    - "projection_algorithm"
-    - "projection_seed"
-    - "projection_input_dim"
-    - "signature_dim"
-    - "dtype"
-    - "num_sequences"
-    - "num_tokens"
-    - "num_layers"
-    - "selected_layers"
-    - "has_router_trace"
-    - "created_at"
-  projection_default:
-    algorithm: "fixed seeded random projection"
-    signature_dim: 128
-    reproducibility: "same algorithm/seed/input/output dims => same projection"
+    schema_version: "trace-v1"
+    run_id: "nonempty string"
+    model_id: "nonempty string"
+    model_revision: "nonempty string"
+    git_sha: "full 40-char lowercase hex commit SHA; UNKNOWN forbidden"
+    config_hash: "64-char lowercase sha256"
+    seed: "integer"
+    projection:
+      algorithm: "nonempty string"
+      seed: "integer"
+      input_dim: ">=1"
+      output_dim: ">=1 and MUST equal signature_dim"
+    dtype: ["float16", "bfloat16", "float32"]
+    signature_dim: ">=1"
+    num_sequences: ">=0"
+    num_tokens: ">=0"
+    num_layers: ">=1"
+    selected_layers: "nonempty unique layer ids; each 0 <= id < num_layers"
+    has_router_trace: "boolean"
+    created_at: "nonempty timestamp string"
+  router_contract:
+    when_has_router_trace_true:
+      required_metadata:
+        num_experts: ">=1"
+        top_k: ">=1 and <= num_experts"
+        weight_sum_tolerance: "0 < tolerance <= 0.1"
+      required_arrays: ["expert_ids", "expert_weights"]
+      expert_id_rule: "0 <= id < num_experts"
+      expert_weight_rule: "finite, nonnegative, selected weights sum to 1 within tolerance"
+    when_has_router_trace_false: "router metadata and router arrays are forbidden"
+  chunk_semantics:
+    - "num_tokens>0 requires >=1 chunk; num_tokens=0 requires zero chunks"
+    - "indices are contiguous 0..N-1"
+    - "path must equal trace/chunk_<index:05d>.safetensors"
+    - "chunk paths are unique"
+    - "chunk tokens are positive"
+    - "sum(chunk.tokens) == num_tokens"
+  array_semantics:
+    positions: "within each sequence positions are zero-based contiguous; new sequence restarts 0; sequences do not interleave"
+    numeric: "state signatures and router weights must be finite"
 
 artifact_policy:
   immutable_runs: true
-  run_layout:
-    - "manifest.json"
-    - "config.json"
-    - "environment.json"
-    - "status.json"
-    - "trace/chunk_XXXXX.safetensors"
-    - "hashes/sha256.json"
-    - "profiler/events.jsonl"
-    - "results/*.json"
-    - "logs/events.jsonl"
-    - "COMPLETE"
-  incomplete_without_complete_sentinel: true
   default_reader_rejects_incomplete: true
   atomic_chunk_write: ["write .tmp", "fsync", "hash", "validate", "atomic rename"]
   per_chunk_sha256: true
   resume_from_last_valid_chunk: true
-  git_forbids_large_run_artifacts: true
+  run_layout: ["manifest.json", "config.json", "environment.json", "status.json", "trace/manifest.json", "trace/chunk_XXXXX.safetensors", "hashes/sha256.json", "profiler/events.jsonl", "results/*.json", "logs/events.jsonl", "COMPLETE"]
+  forbidden_serialization: ["pickle", "allow_pickle=True", "arbitrary Python objects"]
 
 error_taxonomy:
-  E100: "CONTRACT"
-  E110: "SCHEMA"
-  E200: "MODEL_LOAD"
-  E210: "TOKENIZER"
-  E220: "TRACE"
-  E230: "ROUTER"
-  E300: "ARTIFACT_WRITE"
-  E310: "ARTIFACT_READ"
-  E320: "ARTIFACT_CORRUPT"
-  E400: "CUDA"
-  E410: "OOM"
-  E420: "DEVICE"
-  E500: "NUMERIC"
-  E510: "NAN"
-  E520: "INF"
-  E600: "PREDICTABILITY"
-  E610: "TRAJECTORY"
-  E700: "EXPERIMENT"
-  E800: "DETERMINISM"
-  E900: "INTERNAL"
+  document: "docs/ERROR_TAXONOMY.md"
+  codes:
+    E100: CONTRACT
+    E110: SCHEMA
+    E200: MODEL_LOAD
+    E210: TOKENIZER
+    E220: TRACE
+    E230: ROUTER
+    E300: ARTIFACT_WRITE
+    E310: ARTIFACT_READ
+    E320: ARTIFACT_CORRUPT
+    E400: CUDA
+    E410: OOM
+    E420: DEVICE
+    E500: NUMERIC
+    E510: NAN
+    E520: INF
+    E600: PREDICTABILITY
+    E610: TRAJECTORY
+    E700: EXPERIMENT
+    E800: DETERMINISM
+    E900: INTERNAL
+  precedence:
+    - "E410 wins over E400 for OOM"
+    - "E510/E520 win over E500 for NaN/Inf"
+    - "missing required artifact/file/sentinel at read stage -> E310"
+    - "present but schema/semantic-invalid manifest -> E110"
+    - "hash mismatch/truncated immutable bytes -> E320"
 
-experiment_state_machine:
-  states: ["CREATED", "TRACE_RUNNING", "TRACE_COMPLETE", "ANALYSIS_RUNNING", "ANALYSIS_COMPLETE", "VALIDATING", "COMPLETE", "FAILED_RETRYABLE", "FAILED_FATAL"]
-  retryable_examples: ["OOM", "device transient", "process interruption with valid prior chunks"]
-  fatal_examples: ["schema mismatch", "contract mismatch", "corrupt immutable input"]
-
-synthetic_ground_truth:
-  datasets:
-    SYNTH_RANDOM: {predictability: "LOW", compression: "LOW"}
-    SYNTH_MARKOV: {short_horizon: "HIGH", long_horizon: "LOWER"}
-    SYNTH_PERIODIC: {predictability: "HIGH", compression: "HIGH"}
-    SYNTH_MACRO: {macro_compression: "HIGH"}
-    SYNTH_PREDICTABLE: {predictability: "HIGH"}
-    SYNTH_BOTH: {predictability: "HIGH", compression: "HIGH"}
-  rule: "Real-model conclusions are invalid until analyzers recover known synthetic structure."
+fixtures:
+  golden_spec: "fixtures/spec/tiny_trace_v1.json"
+  invalid_spec: "fixtures/spec/invalid_trace_v1_cases.json"
+  invalid_case_requirement: "every case has id, stage, exact mutation, expected leaf error code"
 
 scientific_rules:
-  split_unit: "sequence/prompt, never random-token split for final conclusions"
-  fit_train_only:
-    - "normalization"
-    - "projection calibration if learned"
-    - "discretizer"
-    - "KMeans"
-    - "predictor"
+  split_unit: "sequence/prompt; never random-token split for final conclusions"
+  fit_train_only: ["normalization", "learned projection calibration", "discretizer", "KMeans", "predictor"]
   predictability_baselines: ["mean", "persistence", "linear_ridge"]
   optional_predictability_baselines: ["small_mlp"]
   predictability_metrics: ["r2", "cosine", "nmse", "mae"]
@@ -352,117 +248,73 @@ scientific_rules:
   conclusion_seeds: [397, 398, 399, 400, 401]
   conclusion_statistics: ["mean", "std", "confidence_interval"]
   result_lifecycle: ["RAW", "VALIDATED_SOFTWARE", "VALIDATED_SCIENCE", "ACCEPTED"]
-  only_accepted_results_enter_reports: true
 
-model_scale_ladder:
-  - "Mock"
-  - "Synthetic"
-  - "0.8B"
-  - "9B"
-  - "35B-A3B"
-  - "SCIENTIFIC_AUDIT"
-  - "GO_OR_NO_GO"
-  - "Phase-B CSPM modules"
-  - "397 teacher"
+synthetic_ground_truth:
+  datasets:
+    SYNTH_RANDOM: {predictability: LOW, compression: LOW}
+    SYNTH_MARKOV: {short_horizon: HIGH, long_horizon: LOWER}
+    SYNTH_PERIODIC: {predictability: HIGH, compression: HIGH}
+    SYNTH_MACRO: {macro_compression: HIGH}
+    SYNTH_PREDICTABLE: {predictability: HIGH}
+    SYNTH_BOTH: {predictability: HIGH, compression: HIGH}
+  rule: "real-model conclusions invalid until analyzers recover known synthetic structure"
 
-experiments:
-  EXP000_BOOTSTRAP:
-    owner: "S0"
-    software_review: "S6"
-    purpose: "config -> run -> raw artifact -> manifest -> reproduction plumbing"
-  EXP000_SYNTH:
-    owners: ["S3", "S4", "S5"]
-    software_review: "S6"
-    science_review: "S7"
-    purpose: "prove analyzers recover known synthetic ground truth"
-  EXP001_08B:
-    owners: ["S1", "S2", "S3", "S4", "S5"]
-    reviews: ["S6", "S7"]
-  EXP002_9B:
-    owners: ["S1", "S2", "S3", "S4", "S5"]
-    reviews: ["S6", "S7"]
-  EXP003_35B_A3B:
-    owners: ["S1", "S2", "S3", "S4", "S5"]
-    reviews: ["S6", "S7"]
-    decision_policy_must_be_frozen_before_results: true
+model_scale_ladder: ["Mock", "Synthetic", "0.8B", "9B", "35B-A3B", "SCIENTIFIC_AUDIT", "GO_OR_NO_GO", "Phase-B CSPM", "397 teacher"]
 
-bootstrap_gates:
-  G0:
-    status: "PENDING_MIGRATION_REVIEW"
-    requires:
-      - "contracts/schemas frozen enough for Wave-1"
-      - "error taxonomy"
-      - "golden fixture specification"
-      - "invalid fixture specification"
-      - "branch/scope rules"
-      - "CI baseline"
-      - "deterministic mock bootstrap"
-      - "S6 software review"
-  SYNTH_GATE:
-    status: "LOCKED"
-    unlock_after: "G0"
-    condition: "Synthetic analyzers recover predeclared ground truth and pass S6+S7 review"
-  SCALE_GATE_08B:
-    status: "LOCKED"
-    unlock_after: "SYNTH_GATE"
-  SCALE_GATE_9B:
-    status: "LOCKED"
-    unlock_after: "08B accepted"
-  SCALE_GATE_35B:
-    status: "LOCKED"
-    unlock_after: "9B accepted"
-  SCIENCE_GO:
-    status: "LOCKED"
-    unlock_after: "35B accepted and independent S7 audit"
-    decisions: ["GO_CSPM", "REDESIGN", "NO_GO"]
+waves:
+  W0: {sessions: ["S0", "S6"], goal: "bootstrap contracts + independent software review"}
+  W1: {sessions: ["S1", "S2", "S3", "S4", "S6"], precondition: "G0 PASS"}
+  W2: {sessions: ["S5", "S6"], precondition: "Wave-1 interfaces merged"}
+  W3: {sessions: ["S7", "S6"], precondition: "synthetic pipeline software-valid"}
+  W4: {sessions: ["S0"], goal: "integration + staged model-scale experiments"}
 
 ci_policy:
-  required_future_matrix: ["ubuntu-python3.11", "windows-python3.11"]
-  gpu_tests: "optional/manual, never required for baseline CI"
-  merge_gates:
+  g0_required:
+    os: ["ubuntu-latest", "windows-latest"]
+    python: ["3.11"]
+    checks: ["bootstrap unit/integration tests", "contract migration tests", "deterministic EXP000 smoke"]
+  before_wave1_worker_merge_expand_to:
     - "formatting"
     - "lint"
     - "type_check"
-    - "unit"
-    - "contract"
-    - "integration"
+    - "unit_tests"
+    - "contract_tests"
+    - "integration_tests"
     - "adversarial_smoke"
     - "deterministic_smoke"
     - "package_build"
-  dependency_lock: "pyproject.toml + uv.lock once non-stdlib dependencies are introduced"
-  dependency_addition_requires: "DEPENDENCY_REQUEST + S0 approval"
+  gpu_tests: "optional/manual; never silently skipped when a result depends on GPU behavior"
+  branch_protection:
+    desired: true
+    current_connector_can_configure: false
+    current_status: "NOT_ENFORCED_BY_REMOTE_RULESET"
+    process_fallback: "NO_SELF_MERGE + S6 review + green PR CI"
+    followup: "configure required status checks/ruleset when repository-setting capability is available"
+
+bootstrap_gates:
+  G0:
+    status: "REWORK_PENDING_S6_REREVIEW"
+    requires:
+      - "contracts/schemas frozen enough for Wave-1"
+      - "run-vs-trace manifest authority explicit"
+      - "TraceArtifact cross-field semantic rules frozen and tested"
+      - "error taxonomy precedence explicit"
+      - "golden and invalid fixture specifications actionable"
+      - "deterministic EXP000 with file-byte config/data/artifact hashes"
+      - "NO_OVERWRITE"
+      - "Windows + Ubuntu CI green"
+      - "S6 independent review recommends G0 PASS"
+  W1_UNLOCK: "only after G0 PASS is recorded on merged main"
+
+migration_sequence:
+  - "S0 fixes S6 findings on PR #5"
+  - "PR #5 CI must pass Windows+Ubuntu"
+  - "S6 re-reviews PR #5 and issue #1 before merge"
+  - "S0 does NOT self-merge"
+  - "after approved merge, freeze new main SHA"
+  - "create Wave-1 branches/tasks from that merged SHA"
 
 raw_handoff:
   version: "1"
   required_fields: ["SESSION", "STATUS", "TASK", "BRANCH", "HEAD", "BASE", "COMMANDS", "TESTS", "METRICS", "ARTIFACTS", "ERRORS", "DECISION", "NEXT"]
   allowed_status: ["PASS", "FAIL", "BLOCKED", "PARTIAL"]
-  template: |-
-    RAW-HANDOFF v1
-    SESSION=<Sx>
-    STATUS=<PASS|FAIL|BLOCKED|PARTIAL>
-    TASK=<task>
-    BRANCH=<branch>
-    HEAD=<sha>
-    BASE=<main_sha>
-    COMMANDS=<json-array>
-    TESTS=<json-object>
-    METRICS=<json-object>
-    ARTIFACTS=<json-array path+sha256>
-    ERRORS=<json-array>
-    DECISION=<READY_FOR_REVIEW|REWORK|BLOCKED|GO_CSPM|NO_GO>
-    NEXT=<task_or_none>
-
-migration:
-  preserves:
-    - "existing stdlib-only EXP000 bootstrap harness"
-    - "existing run manifest hashing/no-overwrite work"
-    - "existing RAW_MODE"
-    - "existing CI smoke"
-  supersedes:
-    - "old early SynapticMemory/Macro/NeuroCore/Runtime session assignment"
-    - "combined software+science reviewer role"
-    - "old direct predictability-to-CSPM build sequence"
-  next_after_merge:
-    - "S6 independently reviews migrated bootstrap"
-    - "G0 PASS"
-    - "create/activate Wave-1 branches S1/S2/S3/S4/S6"
