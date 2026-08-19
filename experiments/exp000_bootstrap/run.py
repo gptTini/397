@@ -14,7 +14,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from cspm.bootstrap import build_manifest, sha256_file, validate_manifest_shape, write_canonical_json
+from cspm.bootstrap import build_manifest, sha256_file, validate_run_manifest, write_canonical_json
 
 _COMPLETE_BYTES = b"CSPM_RUN_COMPLETE_V1\n"
 
@@ -136,7 +136,7 @@ def run(out_dir: Path, seed: int, sample_count: int) -> dict:
     if manifest["dataset_sha256"] != dataset_sha:
         raise RuntimeError("dataset hash does not match emitted dataset_identity.json")
 
-    errors = validate_manifest_shape(manifest)
+    errors = validate_run_manifest(manifest)
     if errors:
         raise RuntimeError("invalid manifest: " + ";".join(errors))
 
