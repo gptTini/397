@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import sys
 import unittest
-from copy import deepcopy
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -168,6 +167,24 @@ class FrozenContractFileTests(unittest.TestCase):
         self.assertGreater(router["weight_sum_tolerance"], 0)
         self.assertIn("zero-based contiguous", spec["array_semantics"]["positions"])
         self.assertIn("0 <= id < router.num_experts", spec["array_semantics"]["expert_ids"])
+
+    def test_sot_separates_s6_from_s7_and_strictly_blocks_phase_b(self) -> None:
+        sot = (REPO_ROOT / "CSPM_SOT.yaml").read_text("utf-8")
+        self.assertIn('schema_version: "2.1"', sot)
+        self.assertIn('name: "SOFTWARE_QA_CI_RED_TEAM"', sot)
+        self.assertIn('name: "SCIENTIFIC_AUDITOR_REPRODUCIBILITY"', sot)
+        self.assertIn('before_go_policy: "NO_IMPLEMENTATION_NO_PREPARATION_NO_BRANCH_TASKS"', sot)
+        self.assertIn('status: "REWORK_PENDING_S6_REREVIEW"', sot)
+        self.assertNotIn('projection_algorithm', sot)
+        self.assertIn('projection:', sot)
+
+    def test_bootstrap_decision_requires_s6_review_before_merge(self) -> None:
+        decision = (
+            REPO_ROOT / "docs/decisions/0000-bootstrap-ci-probe.md"
+        ).read_text("utf-8")
+        self.assertIn("SOFTWARE_REVIEWER=S6", decision)
+        self.assertIn("S6 independently re-reviews PR #5", decision)
+        self.assertNotIn("S7 independently reproduces and CI passes", decision)
 
 
 if __name__ == "__main__":
