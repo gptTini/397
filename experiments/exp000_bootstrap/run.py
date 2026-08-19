@@ -53,7 +53,9 @@ def deterministic_result(seed: int, sample_count: int) -> dict:
 
 
 def _fsync_file(path: Path) -> None:
-    with path.open("rb") as handle:
+    # Windows requires a writable descriptor for os.fsync; r+b is portable here
+    # because every required file is owned by the freshly-created immutable run.
+    with path.open("r+b") as handle:
         os.fsync(handle.fileno())
 
 
