@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 from cspm.contracts_reference import (
@@ -90,8 +90,7 @@ def _is_safe_run_relative_path(value: str) -> bool:
         or _WINDOWS_DRIVE_PREFIX.match(value) is not None
     ):
         return False
-    path = PurePosixPath(value)
-    return not path.is_absolute() and ".." not in path.parts and "." not in path.parts
+    return all(segment not in {".", ".."} for segment in value.split("/"))
 
 
 def validate_manifest_shape(manifest: dict[str, Any]) -> list[str]:
