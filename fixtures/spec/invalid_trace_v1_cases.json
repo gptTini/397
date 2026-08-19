@@ -1,7 +1,7 @@
 {
   "fixture_set": "invalid_trace_v1_cases",
   "contract": "trace-v1",
-  "authority": "Each case defines the stage, exact mutation relative to tiny_trace_v1, and expected leaf error code.",
+  "authority": "Each case defines stage, exact mutation relative to tiny_trace_v1/root run manifest, and expected leaf error code.",
   "cases": [
     {"id":"bad_hash","stage":"READ","mutation":"replace chunk_00000 sha256 with 64 zeroes while bytes remain unchanged","expected_error":"E320"},
     {"id":"missing_manifest","stage":"READ","mutation":"remove trace/manifest.json","expected_error":"E310"},
@@ -11,6 +11,11 @@
     {"id":"sequence_cardinality_mismatch","stage":"VALIDATE","mutation":"set num_sequences=0 while num_tokens=64 and sequence_stats.unique_count=0","expected_error":"E110"},
     {"id":"payload_shape_manifest_mismatch","stage":"VALIDATE","mutation":"actual loaded state_signatures shape is [64,3,8] while manifest array_shapes declares [64,4,8]","expected_error":"E110"},
     {"id":"payload_sequence_stats_manifest_mismatch","stage":"VALIDATE","mutation":"actual sequence_ids contain 3 unique ids while manifest sequence_stats.unique_count=4","expected_error":"E110"},
+    {"id":"payload_dtype_mismatch","stage":"VALIDATE","mutation":"loaded state_signatures dtype is float16 while array_dtypes.state_signatures and dtype declare float32","expected_error":"E110"},
+    {"id":"tensor_inventory_mismatch","stage":"VALIDATE","mutation":"loaded payload omits expert_weights while arrays/array_shapes/array_dtypes declare it","expected_error":"E110"},
+    {"id":"router_entropy_descriptor_asymmetry","stage":"VALIDATE","mutation":"add array_shapes.router_entropy=[64,4] without adding arrays.router_entropy and array_dtypes.router_entropy","expected_error":"E110"},
+    {"id":"cross_manifest_provenance_mismatch","stage":"VALIDATE","mutation":"root run_id/code_sha/config_sha256/seed differ from trace run_id/git_sha/config_hash/seed while both manifests are individually valid","expected_error":"E110"},
+    {"id":"cross_manifest_child_hash_mismatch","stage":"VALIDATE","mutation":"root artifacts trace/manifest.json sha256 differs from actual child manifest sha256","expected_error":"E320"},
     {"id":"nan_state","stage":"VALIDATE","mutation":"set one state_signatures element to NaN","expected_error":"E510"},
     {"id":"inf_state","stage":"VALIDATE","mutation":"set one state_signatures element to +Inf","expected_error":"E520"},
     {"id":"negative_position","stage":"VALIDATE","mutation":"set one positions element to -1","expected_error":"E110"},
@@ -25,7 +30,7 @@
     {"id":"empty_chunks_nonzero_tokens","stage":"VALIDATE","mutation":"set num_tokens=1 and chunks=[]","expected_error":"E110"},
     {"id":"projection_dim_mismatch","stage":"VALIDATE","mutation":"set projection.output_dim different from signature_dim","expected_error":"E110"},
     {"id":"unknown_git_sha","stage":"VALIDATE","mutation":"set git_sha=UNKNOWN","expected_error":"E110"},
-    {"id":"router_missing_arrays","stage":"VALIDATE","mutation":"set has_router_trace=true but omit expert_ids/expert_weights declarations or array_shapes","expected_error":"E110"},
+    {"id":"router_missing_arrays","stage":"VALIDATE","mutation":"set has_router_trace=true but omit expert_ids/expert_weights from any descriptor map","expected_error":"E110"},
     {"id":"tmp_only_partial_write","stage":"WRITE","mutation":"leave trace/chunk_00000.tmp without atomic rename","expected_error":"E300"},
     {"id":"missing_complete_sentinel","stage":"READ","mutation":"remove COMPLETE from otherwise finished run","expected_error":"E310"}
   ]
