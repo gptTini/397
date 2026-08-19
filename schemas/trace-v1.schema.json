@@ -2,14 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cspm397.local/schemas/trace-v1.schema.json",
   "title": "TraceArtifact v1 Manifest",
-  "description": "Child manifest stored at trace/manifest.json. Root run manifest is governed separately by contracts/run_manifest_v1.schema.json.",
+  "description": "Child manifest stored at trace/manifest.json. Root run manifest is governed separately by contracts/run_manifest_v1.schema.json. array_shapes and sequence_stats are derived from payload and must be recomputed by readers.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version", "run_id", "model_id", "model_revision", "git_sha",
     "config_hash", "seed", "projection", "dtype", "signature_dim",
     "num_sequences", "num_tokens", "num_layers", "selected_layers",
-    "has_router_trace", "created_at", "arrays", "chunks"
+    "has_router_trace", "created_at", "arrays", "array_shapes",
+    "sequence_stats", "chunks"
   ],
   "properties": {
     "schema_version": {"const": "trace-v1"},
@@ -67,6 +68,36 @@
         "router_entropy": {"const": "[T,L]"}
       }
     },
+    "array_shapes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token_ids", "sequence_ids", "positions", "state_signatures"],
+      "properties": {
+        "token_ids": {"$ref": "#/$defs/shape1"},
+        "sequence_ids": {"$ref": "#/$defs/shape1"},
+        "positions": {"$ref": "#/$defs/shape1"},
+        "state_signatures": {"$ref": "#/$defs/shape3"},
+        "expert_ids": {"$ref": "#/$defs/shape3"},
+        "expert_weights": {"$ref": "#/$defs/shape3"},
+        "router_entropy": {"$ref": "#/$defs/shape2"}
+      }
+    },
+    "sequence_stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unique_count", "min_id", "max_id", "ids_contiguous_zero_based",
+        "positions_zero_based_contiguous", "sequences_interleaved"
+      ],
+      "properties": {
+        "unique_count": {"type": "integer", "minimum": 0},
+        "min_id": {"type": ["integer", "null"], "minimum": 0},
+        "max_id": {"type": ["integer", "null"], "minimum": 0},
+        "ids_contiguous_zero_based": {"type": "boolean"},
+        "positions_zero_based_contiguous": {"type": "boolean"},
+        "sequences_interleaved": {"type": "boolean"}
+      }
+    },
     "chunks": {
       "type": "array",
       "uniqueItems": true,
@@ -83,26 +114,63 @@
       }
     }
   },
+  "$defs": {
+    "shape1": {
+      "type": "array", "minItems": 1, "maxItems": 1,
+      "items": {"type": "integer", "minimum": 0}
+    },
+    "shape2": {
+      "type": "array", "minItems": 2, "maxItems": 2,
+      "items": {"type": "integer", "minimum": 0}
+    },
+    "shape3": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"type": "integer", "minimum": 0}
+    }
+  },
   "allOf": [
     {
       "if": {"properties": {"num_tokens": {"minimum": 1}}, "required": ["num_tokens"]},
-      "then": {"properties": {"chunks": {"minItems": 1}}}
+      "then": {
+        "properties": {
+          "chunks": {"minItems": 1},
+          "num_sequences": {"minimum": 1}
+        }
+      }
     },
     {
       "if": {"properties": {"num_tokens": {"const": 0}}, "required": ["num_tokens"]},
-      "then": {"properties": {"chunks": {"maxItems": 0}}}
+      "then": {
+        "properties": {
+          "chunks": {"maxItems": 0},
+          "num_sequences": {"const": 0}
+        }
+      }
     },
     {
       "if": {"properties": {"has_router_trace": {"const": true}}, "required": ["has_router_trace"]},
       "then": {
         "required": ["router"],
-        "properties": {"arrays": {"required": ["expert_ids", "expert_weights"]}}
+        "properties": {
+          "arrays": {"required": ["expert_ids", "expert_weights"]},
+          "array_shapes": {"required": ["expert_ids", "expert_weights"]}
+        }
       }
     },
     {
       "if": {"properties": {"has_router_trace": {"const": false}}, "required": ["has_router_trace"]},
       "then": {
-        "not": {"required": ["router"]}
+        "not": {
+          "anyOf": [
+            {"required": ["router"]},
+            {"properties": {"arrays": {"required": ["expert_ids"]}}},
+            {"properties": {"arrays": {"required": ["expert_weights"]}}},
+            {"properties": {"arrays": {"required": ["router_entropy"]}}},
+            {"properties": {"array_shapes": {"required": ["expert_ids"]}}},
+            {"properties": {"array_shapes": {"required": ["expert_weights"]}}},
+            {"properties": {"array_shapes": {"required": ["router_entropy"]}}}
+          ]
+        }
       }
     }
   ]
