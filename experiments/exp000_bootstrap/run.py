@@ -5,8 +5,14 @@ import json
 import os
 import random
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SRC_ROOT = REPO_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
 from cspm.bootstrap import build_manifest, sha256_file, validate_manifest_shape, write_canonical_json
 
@@ -21,7 +27,10 @@ def current_code_sha() -> str:
         return env_sha
     try:
         return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+            ["git", "rev-parse", "HEAD"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            cwd=REPO_ROOT,
         ).strip()
     except Exception:
         return "UNKNOWN"
@@ -89,10 +98,11 @@ def run(out_dir: Path, seed: int, sample_count: int) -> dict:
     manifest_path = out_dir / "manifest.json"
     write_canonical_json(manifest_path, manifest)
 
+    actual_sha = sha256_file(result_path)
     verification = {
         "result_sha256_recorded": result_sha,
-        "result_sha256_actual": sha256_file(result_path),
-        "match": result_sha == sha256_file(result_path),
+        "result_sha256_actual": actual_sha,
+        "match": result_sha == actual_sha,
     }
     write_canonical_json(out_dir / "verification.json", verification)
     if not verification["match"]:
