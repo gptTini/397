@@ -7,6 +7,7 @@
   "manifest_requirements": {
     "git_sha": "40 lowercase hex characters",
     "projection": {"algorithm":"fixed_seeded_random_projection","seed":397,"input_dim":16,"output_dim":8},
+    "dtype": "float32",
     "signature_dim": 8,
     "num_sequences": 4,
     "num_tokens": 64,
@@ -14,6 +15,14 @@
     "selected_layers": [0,1,2,3],
     "has_router_trace": true,
     "router": {"num_experts":8,"top_k":2,"weight_sum_tolerance":0.000001},
+    "arrays": {
+      "token_ids": "[T]",
+      "sequence_ids": "[T]",
+      "positions": "[T]",
+      "state_signatures": "[T,L,D]",
+      "expert_ids": "[T,L,K]",
+      "expert_weights": "[T,L,K]"
+    },
     "array_shapes": {
       "token_ids": [64],
       "sequence_ids": [64],
@@ -21,6 +30,14 @@
       "state_signatures": [64,4,8],
       "expert_ids": [64,4,2],
       "expert_weights": [64,4,2]
+    },
+    "array_dtypes": {
+      "token_ids": "int64",
+      "sequence_ids": "int64",
+      "positions": "int64",
+      "state_signatures": "float32",
+      "expert_ids": "int64",
+      "expert_weights": "float32"
     },
     "sequence_stats": {
       "unique_count": 4,
@@ -38,18 +55,25 @@
     "D": "signature_dim=projection.output_dim=8",
     "K": "router.top_k=2"
   },
+  "descriptor_contract": "sets of keys in arrays, array_shapes, array_dtypes, and loaded payload tensor names are exactly equal",
+  "dtype_contract": {
+    "dtype_field_scope": "state_signatures only",
+    "state_signature_dtype_equals": "array_dtypes.state_signatures",
+    "integer_arrays": ["token_ids","sequence_ids","positions","expert_ids"],
+    "floating_arrays": ["state_signatures","expert_weights"]
+  },
   "array_semantics": {
     "sequence_ids": "four contiguous blocks of 16 tokens using exact ids 0,1,2,3; every id appears",
     "positions": "zero-based contiguous 0..15 inside each sequence; restart at sequence boundary; no interleaving",
-    "state_signatures": "shape [T,L,D] exactly matches array_shapes and all values are finite",
-    "expert_ids": "shape [T,L,K] exactly matches array_shapes and all ids satisfy 0 <= id < router.num_experts",
-    "expert_weights": "shape [T,L,K] exactly matches array_shapes; finite, nonnegative, and each [token,layer,:] sum is within tolerance of 1"
+    "state_signatures": "shape [T,L,D] and dtype exactly match descriptors; all values finite",
+    "expert_ids": "shape [T,L,K] and integer dtype exactly match descriptors; all ids satisfy 0 <= id < router.num_experts",
+    "expert_weights": "shape [T,L,K] and floating dtype exactly match descriptors; finite, nonnegative, and sums are within tolerance"
   },
   "requirements": {
     "deterministic_generation": true,
     "projection_output_dim_equals_signature_dim": true,
-    "manifest_shapes_derived_from_payload": true,
-    "reader_recomputes_shapes_and_sequence_stats": true,
+    "manifest_descriptors_derived_from_payload": true,
+    "reader_recomputes_tensor_names_shapes_dtypes_and_sequence_stats": true,
     "chunk_indices_contiguous_from_zero": true,
     "chunk_path_matches_index": true,
     "chunk_token_sum_equals_num_tokens": true,
@@ -57,5 +81,5 @@
   },
   "producer": "S0 fixture generator or frozen committed small artifact",
   "consumers": ["S1","S2","S3","S4","S6"],
-  "note": "This specification freezes semantics. Binary safetensors payload is added only with deterministic generator, exact derived shape/stat metadata, and recorded SHA-256."
+  "note": "Binary safetensors payload is added only with deterministic generation, exact payload-derived descriptors, and recorded SHA-256."
 }
