@@ -1,11 +1,11 @@
-schema_version: "2.2"
+schema_version: "2.3"
 project:
   id: "CSPM397"
   repo: "gptTini/397"
   name: "Chrono-Synaptic Program Machine"
-  status: "G0_REWORK_ROUND2_PENDING_S6_REREVIEW"
+  status: "G0_REWORK_ROUND3_PENDING_S6_REREVIEW"
   source_of_truth: "CSPM_SOT.yaml"
-  plan_revision: "feasibility-first-2026-08-20-r2"
+  plan_revision: "feasibility-first-2026-08-20-r3"
 
 mission:
   research_question: >-
@@ -42,6 +42,8 @@ invariants:
   - "GITHUB_MAIN_IS_INTEGRATION_SOURCE_OF_TRUTH"
   - "LARGE_RUN_ARTIFACTS_ARE_NOT_COMMITTED_TO_GIT"
   - "EVERY_RUN_HAS_CODE_CONFIG_DATA_MODEL_SEED_AND_ARTIFACT_IDENTITY"
+  - "ROOT_AND_CHILD_MANIFEST_PROVENANCE_MUST_AGREE"
+  - "TENSOR_DESCRIPTOR_AND_PAYLOAD_INVENTORIES_MUST_MATCH_EXACTLY"
 
 architecture_boundary:
   only_cross_module_trace_contract: "TraceArtifact v1"
@@ -56,7 +58,25 @@ sessions:
   S0:
     name: "ARCHITECT_ORCHESTRATOR_MERGE_CONTROLLER"
     branch: "cspm/orchestrator"
-    owns: ["CSPM_SOT.yaml", "AGENTS.md", "contracts/**", "schemas/**", "docs/architecture/**", "docs/contracts/**", "docs/decisions/**", "docs/experiments/**", "fixtures/spec/**"]
+    owns:
+      - "CSPM_SOT.yaml"
+      - "AGENTS.md"
+      - "contracts/**"
+      - "schemas/**"
+      - "docs/architecture/**"
+      - "docs/contracts/**"
+      - "docs/decisions/**"
+      - "docs/experiments/**"
+      - "docs/ERROR_TAXONOMY.md"
+      - "fixtures/spec/**"
+      - "src/cspm/bootstrap.py"
+      - "src/cspm/contracts_reference.py"
+      - "experiments/exp000_bootstrap/**"
+      - "tests/test_bootstrap.py"
+      - "tests/test_contract_migration.py"
+    legacy_bootstrap_note: >-
+      These explicit legacy G0 paths are permanently S0-owned until a later recorded
+      migration moves them. No worker may infer ownership from directory proximity.
   S1:
     name: "MODEL_TRACE"
     branch: "s1/model-trace"
@@ -111,8 +131,8 @@ branch_policy:
       authorized_session: "S0"
       normal_owner: "S6"
       paths: [".github/workflows/ci.yml"]
-      reason: "S6 initial G0 review delegated B007 rework to S0 via NEXT=S0_FIX_PR5; exception is limited to the existing PR #5 G0 migration rework."
-      approval: "S6 must independently rereview the resulting current head before merge."
+      reason: "S6 delegated B007 G0 CI rework to S0 on the already-open migration PR."
+      approval: "S6 independently rereviews the resulting current head before merge."
       expires: "when PR #5 is merged or closed"
 
 manifest_authority:
@@ -125,25 +145,34 @@ manifest_authority:
     path: "<run>/trace/manifest.json"
     contract: "TraceArtifact v1"
     schema: "schemas/trace-v1.schema.json"
-    authority: "trace arrays, exact axis metadata, projection, sequence/router metadata, chunk ordering and hashes"
+    authority: "trace tensor descriptors, projection, sequence/router metadata, chunk ordering and hashes"
   checksum_index:
     path: "<run>/hashes/sha256.json"
     authority: "checksum index only; never a manifest"
   complete_sentinel: "<run>/COMPLETE"
-  composition_rule: >-
-    When a run contains TraceArtifact v1, root RunManifest artifacts MUST reference
-    trace/manifest.json and its exact hash. Duplicate hash indexes must agree.
+  trace_reference_rule: "root artifacts MUST contain exactly one trace/manifest.json with exact child SHA-256"
+  duplicated_identity_equalities:
+    - "root.run_id == trace.run_id"
+    - "root.code_sha == trace.git_sha"
+    - "root.config_sha256 == trace.config_hash"
+    - "root.seed == trace.seed"
+  mismatch_classification:
+    provenance: "E110"
+    child_manifest_hash: "E320"
+  composition_validator: "src/cspm/contracts_reference.py::validate_run_trace_composition"
   path_rule: "all artifact paths are run-relative POSIX paths; absolute and .. traversal forbidden"
   detailed_contract: "docs/contracts/MANIFEST_AUTHORITY.md"
 
 trace_artifact_v1:
   manifest_path: "trace/manifest.json"
   schema: "schemas/trace-v1.schema.json"
-  semantic_validator: "src/cspm/bootstrap.py::validate_trace_manifest_semantics"
+  semantic_validator: "src/cspm/contracts_reference.py::validate_trace_manifest_semantics"
+  payload_validator: "src/cspm/contracts_reference.py::validate_trace_payload_summary"
+  bootstrap_reexport: "src/cspm/bootstrap.py re-exports the authoritative validators; it must not contain a divergent trace contract"
   payload_validation_rule: >-
-    Manifest shape/stat metadata is not trusted. Producers derive it from actual tensors;
-    consumers MUST recompute array shapes and sequence statistics from loaded tensors and
-    reject any mismatch before analysis. S2/S6 production validators must preserve this rule.
+    Producers derive tensor names/shapes/dtypes and sequence statistics from actual tensors.
+    Consumers independently recompute all of them from loaded payload bytes and reject any
+    mismatch before analysis. S2/S6 production validators must preserve these rules.
   storage:
     tensor: ".safetensors"
     metadata: ".json"
@@ -164,6 +193,9 @@ trace_artifact_v1:
     expert_ids: "[T,L,K]"
     expert_weights: "[T,L,K]"
     router_entropy: "[T,L]"
+  descriptor_bijection: >-
+    set(arrays.keys) == set(array_shapes.keys) == set(array_dtypes.keys) ==
+    set(loaded_payload_tensor_names). No extra or missing tensor descriptor is allowed.
   required_array_shapes:
     token_ids: "[num_tokens]"
     sequence_ids: "[num_tokens]"
@@ -172,6 +204,17 @@ trace_artifact_v1:
     router_true_expert_ids: "[num_tokens,len(selected_layers),router.top_k]"
     router_true_expert_weights: "[num_tokens,len(selected_layers),router.top_k]"
     optional_router_entropy: "[num_tokens,len(selected_layers)]"
+  dtype_contract:
+    dtype_field_scope: "state_signatures only"
+    dtype_field_allowed: ["float16", "bfloat16", "float32"]
+    dtype_field_equals: "array_dtypes.state_signatures"
+    integer_arrays:
+      names: ["token_ids", "sequence_ids", "positions", "expert_ids"]
+      allowed: ["int32", "int64"]
+    floating_arrays:
+      names: ["state_signatures", "expert_weights", "router_entropy"]
+      allowed: ["float16", "bfloat16", "float32"]
+    observed_rule: "loaded tensor dtypes must exactly equal array_dtypes for every tensor name"
   required_sequence_stats:
     unique_count: "must equal num_sequences"
     min_id: "null for empty trace; otherwise 0"
@@ -182,7 +225,7 @@ trace_artifact_v1:
   sequence_contract:
     - "num_tokens=0 iff num_sequences=0"
     - "num_tokens>0 requires 1 <= num_sequences <= num_tokens"
-    - "sequence_ids values are exactly contiguous integer ids 0..num_sequences-1 and every id appears"
+    - "sequence_ids are exactly contiguous integer ids 0..num_sequences-1 and every id appears"
     - "within each sequence positions are exactly 0..N-1"
     - "sequence blocks do not interleave"
   required_metadata:
@@ -198,7 +241,7 @@ trace_artifact_v1:
       seed: "integer"
       input_dim: ">=1"
       output_dim: ">=1 and MUST equal signature_dim"
-    dtype: ["float16", "bfloat16", "float32"]
+    dtype: "state-signature dtype only; see dtype_contract"
     signature_dim: ">=1"
     num_sequences: ">=0 subject to sequence_contract"
     num_tokens: ">=0"
@@ -215,7 +258,7 @@ trace_artifact_v1:
       required_arrays: ["expert_ids", "expert_weights"]
       expert_id_rule: "0 <= id < num_experts"
       expert_weight_rule: "finite, nonnegative, selected weights sum to 1 within tolerance"
-    when_has_router_trace_false: "router metadata, router arrays, and router array_shapes are forbidden"
+    when_has_router_trace_false: "router metadata and every router descriptor/tensor are forbidden"
   chunk_semantics:
     - "num_tokens>0 requires >=1 chunk; num_tokens=0 requires zero chunks"
     - "indices are contiguous 0..N-1"
@@ -223,7 +266,7 @@ trace_artifact_v1:
     - "chunk paths are unique"
     - "chunk tokens are positive"
     - "sum(chunk.tokens) == num_tokens"
-    - "on load, each chunk tensor T-axis must equal chunk.tokens and non-T axes must match global axis bindings"
+    - "on load, each chunk tensor T-axis equals chunk.tokens and non-T axes match global bindings"
   array_semantics:
     positions: "zero-based contiguous within sequence; new sequence restarts 0; sequences do not interleave"
     numeric: "state signatures and router numeric arrays must be finite"
@@ -244,7 +287,7 @@ error_taxonomy:
     - "E410 wins over E400 for OOM"
     - "E510/E520 win over E500 for NaN/Inf"
     - "missing required artifact/file/sentinel at read stage -> E310"
-    - "present but schema/semantic-invalid manifest or payload contract -> E110"
+    - "present but schema/semantic/provenance/payload contract mismatch -> E110"
     - "hash mismatch/truncated immutable bytes -> E320"
 
 fixtures:
@@ -301,12 +344,13 @@ ci_policy:
 
 bootstrap_gates:
   G0:
-    status: "REWORK_ROUND2_PENDING_S6_REREVIEW"
+    status: "REWORK_ROUND3_PENDING_S6_REREVIEW"
     requires:
       - "contracts/schemas frozen enough for Wave-1"
-      - "run-vs-trace manifest authority explicit"
-      - "TraceArtifact axis/cardinality/cross-field semantic rules frozen and tested"
-      - "payload readers required to recompute manifest shape/sequence statistics"
+      - "all G0 reference paths have explicit owners"
+      - "root-vs-trace manifest authority and duplicated provenance equality explicit"
+      - "TraceArtifact axis/cardinality/tensor-inventory/dtype rules frozen and tested"
+      - "payload readers recompute tensor names/shapes/dtypes/sequence statistics"
       - "error taxonomy precedence explicit"
       - "golden and invalid fixture specifications actionable"
       - "deterministic EXP000 with file-byte config/data/artifact hashes"
@@ -316,7 +360,7 @@ bootstrap_gates:
   W1_UNLOCK: "only after G0 PASS is recorded on merged main"
 
 migration_sequence:
-  - "S0 fixes S6 findings on PR #5 under recorded migration exceptions"
+  - "S0 fixes S6 findings on PR #5 under recorded ownership"
   - "PR #5 CI must pass Windows+Ubuntu"
   - "S6 re-reviews PR #5 and issue #1 before merge"
   - "S0 does NOT self-merge"
