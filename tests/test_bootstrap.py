@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,22 @@ def _load_exp000_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _root_manifest_with_path(path: str) -> dict:
+    return {
+        "schema_version": "1",
+        "run_id": "x",
+        "experiment_id": "EXP000",
+        "code_sha": "a" * 40,
+        "config_sha256": "b" * 64,
+        "dataset_sha256": "c" * 64,
+        "seed": 397,
+        "started_at": "x",
+        "completed_at": "x",
+        "artifacts": [{"path": path, "sha256": "d" * 64}],
+        "metrics": {},
+    }
 
 
 class BootstrapUnitTests(unittest.TestCase):
@@ -55,6 +72,40 @@ class BootstrapUnitTests(unittest.TestCase):
         errors = validate_manifest_shape(manifest)
         self.assertIn("code_sha_must_be_full_40_hex", errors)
         self.assertIn("artifact_0_path_invalid", errors)
+
+    def test_root_manifest_schema_and_helper_agree_on_cross_platform_paths(self) -> None:
+        schema = json.loads((REPO_ROOT / "contracts/run_manifest_v1.schema.json").read_text("utf-8"))
+        pattern_text = schema["properties"]["artifacts"]["items"]["properties"]["path"]["pattern"]
+        pattern = re.compile(pattern_text)
+
+        valid_paths = (
+            "result.json",
+            "trace/manifest.json",
+            "nested/a-b_1.json",
+        )
+        invalid_paths = (
+            "/outside/result.json",
+            "../outside/result.json",
+            "nested/../outside.json",
+            "./result.json",
+            "nested/./result.json",
+            "C:\\outside\\result.json",
+            "\\\\server\\share\\result.json",
+            "..\\outside\\result.json",
+            "C:/outside/result.json",
+            "C:relative-result.json",
+            "nested\\result.json",
+        )
+
+        for path in valid_paths:
+            with self.subTest(path=path):
+                self.assertIsNotNone(pattern.fullmatch(path))
+                self.assertNotIn("artifact_0_path_invalid", validate_manifest_shape(_root_manifest_with_path(path)))
+
+        for path in invalid_paths:
+            with self.subTest(path=path):
+                self.assertIsNone(pattern.fullmatch(path))
+                self.assertIn("artifact_0_path_invalid", validate_manifest_shape(_root_manifest_with_path(path)))
 
 
 class Exp000IntegrationTests(unittest.TestCase):
