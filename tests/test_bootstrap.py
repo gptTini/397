@@ -7,6 +7,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = REPO_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
 from cspm.bootstrap import canonical_json_bytes, validate_manifest_shape
 
 
@@ -26,7 +31,7 @@ class Exp000IntegrationTests(unittest.TestCase):
         return subprocess.run(
             [
                 sys.executable,
-                "experiments/exp000_bootstrap/run.py",
+                str(REPO_ROOT / "experiments/exp000_bootstrap/run.py"),
                 "--out",
                 str(out),
                 "--seed",
@@ -37,6 +42,7 @@ class Exp000IntegrationTests(unittest.TestCase):
             check=False,
             text=True,
             capture_output=True,
+            cwd=REPO_ROOT,
         )
 
     def test_clean_reproduction_has_identical_raw_result(self) -> None:
