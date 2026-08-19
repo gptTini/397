@@ -22,6 +22,8 @@ The duplicated identity fields are not independent metadata. They are equality i
 
 Any mismatch is a composition/semantic contract failure (`E110`). A child-manifest hash mismatch is byte-integrity failure (`E320`). `validate_run_trace_composition` is the bootstrap reference validator; S2/S6 production validators must preserve these invariants.
 
+The actual child-manifest SHA-256 is a **mandatory validator input**. Readers MUST compute it from the loaded `trace/manifest.json` bytes and pass it to composition validation. There is no permitted API path that skips child-hash verification; omission is a caller/programming error rather than successful validation.
+
 The child trace manifest never supplies experiment-level metrics or run state. The root manifest never redefines trace tensor descriptors, projection/router semantics, chunk ordering, or sequence statistics.
 
 ## Trace payload descriptors
@@ -45,10 +47,10 @@ All manifest artifact paths are run-relative POSIX-style paths. Absolute paths a
 
 1. Resolve run directory and required files. Missing files -> E310.
 2. Validate root RunManifest shape/schema -> E110 on violation.
-3. Validate referenced artifact hashes -> E320 on mismatch.
+3. Load `trace/manifest.json`, compute SHA-256 from its exact bytes, and verify the root artifact reference -> E320 on mismatch.
 4. Validate `trace/manifest.json` JSON schema -> E110.
 5. Apply TraceArtifact semantic validator -> E110.
-6. Apply root↔trace composition validator -> E110 for provenance mismatch, E320 for child-manifest hash mismatch.
+6. Apply root↔trace composition validator with the mandatory computed child SHA -> E110 for provenance mismatch, E320 for child-manifest hash mismatch.
 7. Load chunks and independently recompute tensor inventory, shapes, dtypes, sequence stats, plus tensor-level semantic/numeric checks -> E110/E510/E520 as applicable.
 8. Validate chunk hashes -> E320 for byte corruption.
 9. Require `COMPLETE` for default read acceptance.
