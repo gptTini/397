@@ -244,9 +244,13 @@ def validate_run_trace_composition(
     root_manifest: dict[str, Any],
     trace_manifest: dict[str, Any],
     *,
-    trace_manifest_sha256: str | None = None,
+    trace_manifest_sha256: str,
 ) -> list[str]:
-    """Bind duplicated provenance across root RunManifest and TraceArtifact child."""
+    """Bind duplicated provenance and mandatory child-byte SHA across manifests.
+
+    The caller MUST compute trace_manifest_sha256 from the actual child manifest bytes.
+    There is intentionally no default/skip path for this integrity check.
+    """
     errors: list[str] = []
     equality = (
         ("run_id", "run_id", "run_id"),
@@ -264,9 +268,8 @@ def validate_run_trace_composition(
         refs = [a for a in artifacts if isinstance(a, dict) and a.get("path") == "trace/manifest.json"]
     if len(refs) != 1:
         errors.append("root_must_reference_exactly_one_trace_manifest")
-    elif trace_manifest_sha256 is not None:
-        if not isinstance(trace_manifest_sha256, str) or _HEX64.fullmatch(trace_manifest_sha256) is None:
-            errors.append("trace_manifest_sha256_invalid")
-        elif refs[0].get("sha256") != trace_manifest_sha256:
-            errors.append("root_trace_manifest_hash_mismatch")
+    elif not isinstance(trace_manifest_sha256, str) or _HEX64.fullmatch(trace_manifest_sha256) is None:
+        errors.append("trace_manifest_sha256_invalid")
+    elif refs[0].get("sha256") != trace_manifest_sha256:
+        errors.append("root_trace_manifest_hash_mismatch")
     return errors
