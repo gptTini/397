@@ -62,19 +62,30 @@ def _fsync_file(path: Path) -> None:
 def _write_complete_sentinel(out_dir: Path, required_files: tuple[Path, ...]) -> None:
     """Commit run completion only after required files are durably flushed.
 
-    COMPLETE is the final commit marker. If any earlier write/validation/fsync fails,
-    this function is never reached and default readers must treat the run as partial.
+    COMPLETE is the final commit marker. Any failure before the atomic rename must
+    leave neither COMPLETE nor .COMPLETE.tmp. If cleanup itself fails, preserve the
+    original exception and annotate it with E300 cleanup evidence.
     """
     for path in required_files:
         _fsync_file(path)
 
     complete_path = out_dir / "COMPLETE"
     tmp_path = out_dir / ".COMPLETE.tmp"
-    with tmp_path.open("xb") as handle:
-        handle.write(_COMPLETE_BYTES)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(tmp_path, complete_path)
+    try:
+        with tmp_path.open("xb") as handle:
+            handle.write(_COMPLETE_BYTES)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, complete_path)
+    except BaseException as original_error:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError as cleanup_error:
+            if hasattr(original_error, "add_note"):
+                original_error.add_note(
+                    f"E300 completion sentinel cleanup failed: {cleanup_error!r}"
+                )
+        raise
 
 
 def run(out_dir: Path, seed: int, sample_count: int) -> dict:
