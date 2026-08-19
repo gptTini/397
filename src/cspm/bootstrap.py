@@ -14,6 +14,7 @@ from cspm.contracts_reference import (
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _GIT40 = re.compile(r"^[0-9a-f]{40}$")
+_WINDOWS_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -82,7 +83,12 @@ def build_manifest(
 
 
 def _is_safe_run_relative_path(value: str) -> bool:
-    if not value or value.startswith(("/", "\\")) or "\\" in value:
+    if (
+        not value
+        or value.startswith(("/", "\\"))
+        or "\\" in value
+        or _WINDOWS_DRIVE_PREFIX.match(value) is not None
+    ):
         return False
     path = PurePosixPath(value)
     return not path.is_absolute() and ".." not in path.parts and "." not in path.parts
