@@ -16,6 +16,8 @@ if str(SRC_ROOT) not in sys.path:
 
 from cspm.bootstrap import build_manifest, sha256_file, validate_manifest_shape, write_canonical_json
 
+_COMPLETE_BYTES = b"CSPM_RUN_COMPLETE_V1\n"
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -48,6 +50,29 @@ def deterministic_result(seed: int, sample_count: int) -> dict:
         "values": values,
         "weighted_checksum": checksum,
     }
+
+
+def _fsync_file(path: Path) -> None:
+    with path.open("rb") as handle:
+        os.fsync(handle.fileno())
+
+
+def _write_complete_sentinel(out_dir: Path, required_files: tuple[Path, ...]) -> None:
+    """Commit run completion only after required files are durably flushed.
+
+    COMPLETE is the final commit marker. If any earlier write/validation/fsync fails,
+    this function is never reached and default readers must treat the run as partial.
+    """
+    for path in required_files:
+        _fsync_file(path)
+
+    complete_path = out_dir / "COMPLETE"
+    tmp_path = out_dir / ".COMPLETE.tmp"
+    with tmp_path.open("xb") as handle:
+        handle.write(_COMPLETE_BYTES)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp_path, complete_path)
 
 
 def run(out_dir: Path, seed: int, sample_count: int) -> dict:
@@ -119,10 +144,21 @@ def run(out_dir: Path, seed: int, sample_count: int) -> dict:
             and manifest["dataset_sha256"] == sha256_file(dataset_path)
         ),
     }
-    write_canonical_json(out_dir / "verification.json", verification)
+    verification_path = out_dir / "verification.json"
+    write_canonical_json(verification_path, verification)
     if not verification["match"]:
         raise RuntimeError("artifact/config/dataset hash mismatch")
 
+    _write_complete_sentinel(
+        out_dir,
+        (
+            result_path,
+            config_path,
+            dataset_path,
+            manifest_path,
+            verification_path,
+        ),
+    )
     return manifest
 
 
