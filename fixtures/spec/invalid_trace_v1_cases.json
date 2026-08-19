@@ -1,0 +1,21 @@
+{
+  "fixture_set": "invalid_trace_v1_cases",
+  "contract": "trace-v1",
+  "cases": [
+    {"id": "bad_hash", "expected_error": "E320"},
+    {"id": "missing_manifest", "expected_error": "E110"},
+    {"id": "wrong_shape", "expected_error": "E110"},
+    {"id": "nan_state", "expected_error": "E510"},
+    {"id": "inf_state", "expected_error": "E520"},
+    {"id": "negative_position", "expected_error": "E110"},
+    {"id": "bad_expert_id", "expected_error": "E110"},
+    {"id": "negative_expert_weight", "expected_error": "E110"},
+    {"id": "expert_weight_sum_invalid", "expected_error": "E110"},
+    {"id": "truncated_chunk", "expected_error": "E320"},
+    {"id": "unknown_schema", "expected_error": "E110"},
+    {"id": "duplicate_chunk", "expected_error": "E110"},
+    {"id": "out_of_order_positions", "expected_error": "E110"},
+    {"id": "tmp_only_partial_write", "expected_error": "E300"},
+    {"id": "missing_complete_sentinel", "expected_error": "E310"}
+  ]
+}
