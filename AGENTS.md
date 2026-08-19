@@ -9,7 +9,7 @@ Every session MUST:
 1. Read `CSPM_SOT.yaml` completely.
 2. Record latest `main` SHA as `BASE_SHA`.
 3. Confirm session ID, branch, phase, owned paths, and activation condition.
-4. Refuse cross-session edits unless S0 issued an explicit contract-change task first.
+4. Refuse cross-session edits unless S0 has already recorded an explicit task/exception in the SOT.
 5. Check the task gate before implementation or scientific claims.
 6. Use GitHub main + committed contracts/manifests as source of truth.
 
@@ -55,21 +55,38 @@ Never use pickle, `allow_pickle=True`, or arbitrary Python-object serialization 
 
 ## TraceArtifact semantic checks
 
-JSON schema validation alone is insufficient. Producers/readers must also enforce the cross-field rules frozen in SOT, including:
+JSON schema validation alone is insufficient. Producers/readers must also enforce the cross-field rules frozen in SOT.
+
+Axis contract:
+
+- `T == num_tokens`
+- `L == len(selected_layers)`; `L` is not `num_layers`
+- `D == signature_dim == projection.output_dim`
+- when router trace exists, `K == router.top_k`
+- manifest `array_shapes` must therefore be exact integer shapes for every declared tensor
+
+Sequence/cardinality contract:
+
+- `num_tokens=0` iff `num_sequences=0`
+- a non-empty trace has `1 <= num_sequences <= num_tokens`
+- `sequence_ids` use every contiguous integer id `0..num_sequences-1`
+- positions are zero-based contiguous within each sequence and sequence blocks do not interleave
+- manifest `sequence_stats` records those derived facts
+
+**Manifest-derived shape/stat metadata is never trusted.** S1/S2 producers derive it from the actual tensor payload, and S2/S6 readers independently recompute array shapes + sequence statistics after loading tensors. Payload-vs-manifest mismatch is E110 and analysis stops.
+
+Other required checks include:
 
 - full 40-char git SHA; `UNKNOWN` is invalid
-- `projection.output_dim == signature_dim`
 - non-empty valid `selected_layers`
-- nonzero token count requires chunks
 - chunk indices contiguous from zero and paths matching indices
 - sum of chunk token counts equals `num_tokens`
-- router trace requires router metadata + expert arrays
-- expert IDs and weights follow declared `num_experts` and weight-sum tolerance
-- positions are zero-based contiguous inside each sequence and restart at sequence boundaries
+- router trace requires router metadata + expert arrays and their matching `array_shapes`
+- expert IDs/weights follow `num_experts`, `top_k`, finiteness, nonnegative weight, and weight-sum tolerance rules
 
 ## Error classification
 
-Use `docs/ERROR_TAXONOMY.md`. Specific leaf errors win over generic parents: OOM -> E410, NaN -> E510, Inf -> E520. Missing required artifact at read stage -> E310; present but schema/semantic-invalid metadata -> E110; hash/truncation corruption -> E320.
+Use `docs/ERROR_TAXONOMY.md`. Specific leaf errors win over generic parents: OOM -> E410, NaN -> E510, Inf -> E520. Missing required artifact at read stage -> E310; present but schema/semantic-invalid metadata or payload contract -> E110; hash/truncation corruption -> E320.
 
 ## Scientific constraints
 
@@ -98,11 +115,15 @@ For every meaningful bug:
 6. Re-run failing test and relevant regression suite.
 7. Keep regression tests permanently.
 
+## Ownership exceptions
+
+Cross-session edits are invalid unless the SOT already records a narrow exception with task/PR/path/reason/reviewer/expiry. The G0 PR #5 CI migration exception is recorded in `branch_policy.migration_exceptions`; it expires when PR #5 is merged or closed and requires S6 rereview.
+
 ## Review / merge order
 
 Implementation -> self-test -> PR -> S6 software review -> S7 review when scientific semantics/results are involved -> S0 integration decision -> merge.
 
-For G0 migration specifically: **S6 re-review happens before PR #5 merge.** S0 does not self-merge. Green CI is necessary but never substitutes for S6 review.
+For G0 migration specifically: **S6 rereview happens before PR #5 merge.** S0 does not self-merge. Green CI is necessary but never substitutes for S6 review.
 
 ## Required worker finish sequence
 
@@ -111,7 +132,7 @@ For G0 migration specifically: **S6 re-review happens before PR #5 merge.** S0 d
 3. Commit only owned paths.
 4. Open one-responsibility PR to `main`.
 5. Do NOT self-merge.
-6. Emit exact `RAW-HANDOFF v1` fields from SOT.
+6. Emit exact `RAW-HANDOFF v1` fields and allowed decision values from SOT.
 
 ## Raw mode
 
