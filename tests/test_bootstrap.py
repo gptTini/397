@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 from unittest import mock
 
@@ -15,7 +16,12 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from cspm.bootstrap import canonical_json_bytes, sha256_file, validate_manifest_shape
+from cspm.bootstrap import (
+    canonical_json_bytes,
+    sha256_file,
+    validate_manifest_shape,
+    validate_run_manifest,
+)
 
 
 def _load_exp000_module():
@@ -28,7 +34,7 @@ def _load_exp000_module():
     return module
 
 
-def _root_manifest_with_path(path: str) -> dict:
+def _valid_root_manifest() -> dict:
     return {
         "schema_version": "1",
         "run_id": "x",
@@ -39,9 +45,15 @@ def _root_manifest_with_path(path: str) -> dict:
         "seed": 397,
         "started_at": "x",
         "completed_at": "x",
-        "artifacts": [{"path": path, "sha256": "d" * 64}],
+        "artifacts": [{"path": "result.json", "sha256": "d" * 64}],
         "metrics": {},
     }
+
+
+def _root_manifest_with_path(path: str) -> dict:
+    manifest = _valid_root_manifest()
+    manifest["artifacts"] = [{"path": path, "sha256": "d" * 64}]
+    return manifest
 
 
 class BootstrapUnitTests(unittest.TestCase):
@@ -56,19 +68,9 @@ class BootstrapUnitTests(unittest.TestCase):
         self.assertTrue(any(error.startswith("missing_fields=") for error in errors))
 
     def test_manifest_validator_rejects_unknown_sha_and_unsafe_path(self) -> None:
-        manifest = {
-            "schema_version": "1",
-            "run_id": "x",
-            "experiment_id": "EXP000",
-            "code_sha": "UNKNOWN",
-            "config_sha256": "0" * 64,
-            "dataset_sha256": "1" * 64,
-            "seed": 397,
-            "started_at": "x",
-            "completed_at": "x",
-            "artifacts": [{"path": "../result.json", "sha256": "2" * 64}],
-            "metrics": {},
-        }
+        manifest = _valid_root_manifest()
+        manifest["code_sha"] = "UNKNOWN"
+        manifest["artifacts"] = [{"path": "../result.json", "sha256": "2" * 64}]
         errors = validate_manifest_shape(manifest)
         self.assertIn("code_sha_must_be_full_40_hex", errors)
         self.assertIn("artifact_0_path_invalid", errors)
@@ -123,12 +125,12 @@ class BootstrapUnitTests(unittest.TestCase):
         for path in valid_paths:
             with self.subTest(path=path):
                 self.assertIsNotNone(pattern.fullmatch(path))
-                self.assertNotIn("artifact_0_path_invalid", validate_manifest_shape(_root_manifest_with_path(path)))
+                self.assertNotIn("artifact_0_path_invalid", validate_run_manifest(_root_manifest_with_path(path)))
 
         for path in invalid_paths:
             with self.subTest(path=path):
                 self.assertIsNone(pattern.fullmatch(path))
-                self.assertIn("artifact_0_path_invalid", validate_manifest_shape(_root_manifest_with_path(path)))
+                self.assertIn("artifact_0_path_invalid", validate_run_manifest(_root_manifest_with_path(path)))
 
     def test_manifest_authority_documents_portable_path_contract(self) -> None:
         authority = (REPO_ROOT / "docs/contracts/MANIFEST_AUTHORITY.md").read_text("utf-8")
@@ -139,6 +141,77 @@ class BootstrapUnitTests(unittest.TestCase):
             "trailing dot or space",
         ):
             self.assertIn(required, authority)
+
+    def test_root_manifest_reference_pipeline_rejects_schema_invalid_cases(self) -> None:
+        cases = []
+
+        value = _valid_root_manifest()
+        value["run_id"] = ""
+        cases.append(("empty_run_id", value, "run_id_must_be_nonempty_string"))
+
+        value = _valid_root_manifest()
+        value["experiment_id"] = "oops"
+        cases.append(("bad_experiment_id", value, "experiment_id_must_match_EXPddd"))
+
+        value = _valid_root_manifest()
+        value["seed"] = "397"
+        cases.append(("string_seed", value, "seed_must_be_integer"))
+
+        value = _valid_root_manifest()
+        value["seed"] = True
+        cases.append(("boolean_seed", value, "seed_must_be_integer"))
+
+        value = _valid_root_manifest()
+        value["started_at"] = ""
+        cases.append(("empty_started_at", value, "started_at_must_be_nonempty_string"))
+
+        value = _valid_root_manifest()
+        value["completed_at"] = ""
+        cases.append(("empty_completed_at", value, "completed_at_must_be_nonempty_string"))
+
+        value = _valid_root_manifest()
+        value["metrics"] = []
+        cases.append(("metrics_not_object", value, "metrics_must_be_object"))
+
+        value = _valid_root_manifest()
+        value["unknown"] = 1
+        cases.append(("unknown_top_level", value, "unknown_fields=['unknown']"))
+
+        value = _valid_root_manifest()
+        value["artifacts"][0]["unknown"] = 1
+        cases.append(("unknown_artifact_field", value, "artifact_0_fields_invalid"))
+
+        for name, manifest, expected in cases:
+            with self.subTest(name=name):
+                errors = validate_run_manifest(manifest)
+                self.assertIn(expected, errors)
+                self.assertEqual(errors, validate_manifest_shape(manifest))
+
+    def test_root_manifest_pipeline_schema_field_surface_is_frozen(self) -> None:
+        schema = json.loads((REPO_ROOT / "contracts/run_manifest_v1.schema.json").read_text("utf-8"))
+        valid = _valid_root_manifest()
+        self.assertEqual(set(schema["required"]), set(valid))
+        self.assertEqual(set(schema["properties"]), set(valid))
+        self.assertFalse(schema["additionalProperties"])
+        artifact_schema = schema["properties"]["artifacts"]["items"]
+        self.assertEqual(set(artifact_schema["required"]), {"path", "sha256"})
+        self.assertEqual(set(artifact_schema["properties"]), {"path", "sha256"})
+        self.assertFalse(artifact_schema["additionalProperties"])
+        self.assertEqual(validate_run_manifest(valid), [])
+
+    def test_duplicate_artifact_path_is_explicit_semantic_rejection(self) -> None:
+        value = _valid_root_manifest()
+        value["artifacts"] = [
+            {"path": "result.json", "sha256": "d" * 64},
+            {"path": "result.json", "sha256": "e" * 64},
+        ]
+        self.assertIn("duplicate_artifact_path", validate_run_manifest(value))
+        authority = (REPO_ROOT / "docs/contracts/MANIFEST_AUTHORITY.md").read_text("utf-8")
+        self.assertIn("duplicate artifact paths", authority)
+        self.assertIn("validate_run_manifest", authority)
+
+    def test_non_object_root_manifest_fails_closed(self) -> None:
+        self.assertEqual(validate_run_manifest([]), ["root_manifest_must_be_object"])
 
 
 class Exp000IntegrationTests(unittest.TestCase):
@@ -239,7 +312,6 @@ class Exp000IntegrationTests(unittest.TestCase):
         def fail_on_complete_tmp_fsync(fd):
             nonlocal call_count
             call_count += 1
-            # Five required run files are fsync'd first; the sixth fsync is .COMPLETE.tmp.
             if call_count == 6:
                 raise OSError("injected COMPLETE tmp fsync failure")
             return original_fsync(fd)
