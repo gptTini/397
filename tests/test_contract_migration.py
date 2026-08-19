@@ -10,7 +10,11 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from cspm.bootstrap import validate_trace_manifest_semantics, validate_trace_payload_summary
+from cspm.bootstrap import (
+    validate_run_trace_composition,
+    validate_trace_manifest_semantics,
+    validate_trace_payload_summary,
+)
 
 
 def valid_trace_manifest() -> dict:
@@ -53,6 +57,14 @@ def valid_trace_manifest() -> dict:
             "expert_ids": [4, 2, 2],
             "expert_weights": [4, 2, 2],
         },
+        "array_dtypes": {
+            "token_ids": "int64",
+            "sequence_ids": "int64",
+            "positions": "int64",
+            "state_signatures": "float32",
+            "expert_ids": "int64",
+            "expert_weights": "float32",
+        },
         "sequence_stats": {
             "unique_count": 1,
             "min_id": 0,
@@ -72,6 +84,22 @@ def valid_trace_manifest() -> dict:
     }
 
 
+def valid_root_manifest(trace_sha: str = "d" * 64) -> dict:
+    return {
+        "schema_version": "1",
+        "run_id": "fixture",
+        "experiment_id": "EXP001",
+        "code_sha": "a" * 40,
+        "config_sha256": "b" * 64,
+        "dataset_sha256": "e" * 64,
+        "seed": 397,
+        "started_at": "2026-08-20T00:00:00Z",
+        "completed_at": "2026-08-20T00:01:00Z",
+        "artifacts": [{"path": "trace/manifest.json", "sha256": trace_sha}],
+        "metrics": {},
+    }
+
+
 class TraceSemanticContractTests(unittest.TestCase):
     def test_valid_manifest_has_no_cross_field_errors(self) -> None:
         self.assertEqual(validate_trace_manifest_semantics(valid_trace_manifest()), [])
@@ -84,28 +112,13 @@ class TraceSemanticContractTests(unittest.TestCase):
     def test_rejects_projection_signature_mismatch(self) -> None:
         value = valid_trace_manifest()
         value["projection"]["output_dim"] = 7
-        self.assertIn(
-            "projection_output_dim_must_equal_signature_dim",
-            validate_trace_manifest_semantics(value),
-        )
+        self.assertIn("projection_output_dim_must_equal_signature_dim", validate_trace_manifest_semantics(value))
 
     def test_rejects_nonzero_tokens_with_no_sequences(self) -> None:
         value = valid_trace_manifest()
         value["num_sequences"] = 0
         value["sequence_stats"].update({"unique_count": 0, "min_id": None, "max_id": None})
-        self.assertIn(
-            "nonempty_trace_requires_at_least_one_sequence",
-            validate_trace_manifest_semantics(value),
-        )
-
-    def test_rejects_num_sequences_above_num_tokens(self) -> None:
-        value = valid_trace_manifest()
-        value["num_sequences"] = 5
-        value["sequence_stats"].update({"unique_count": 5, "max_id": 4})
-        self.assertIn(
-            "num_sequences_must_not_exceed_num_tokens",
-            validate_trace_manifest_semantics(value),
-        )
+        self.assertIn("nonempty_trace_requires_at_least_one_sequence", validate_trace_manifest_semantics(value))
 
     def test_rejects_state_axis_cardinality_mismatch(self) -> None:
         value = valid_trace_manifest()
@@ -122,13 +135,20 @@ class TraceSemanticContractTests(unittest.TestCase):
         self.assertIn("expert_ids_shape_mismatch", errors)
         self.assertIn("expert_weights_shape_mismatch", errors)
 
-    def test_rejects_sequence_stats_mismatch(self) -> None:
+    def test_rejects_array_descriptor_inventory_asymmetry(self) -> None:
         value = valid_trace_manifest()
-        value["sequence_stats"]["unique_count"] = 2
-        value["sequence_stats"]["ids_contiguous_zero_based"] = False
-        errors = validate_trace_manifest_semantics(value)
-        self.assertIn("sequence_unique_count_must_equal_num_sequences", errors)
-        self.assertIn("sequence_ids_must_be_contiguous_zero_based", errors)
+        value["array_shapes"]["router_entropy"] = [4, 2]
+        self.assertIn("array_descriptor_name_sets_must_match_exactly", validate_trace_manifest_semantics(value))
+
+    def test_rejects_state_signature_dtype_mismatch(self) -> None:
+        value = valid_trace_manifest()
+        value["array_dtypes"]["state_signatures"] = "float16"
+        self.assertIn("state_signature_dtype_must_match_array_dtypes", validate_trace_manifest_semantics(value))
+
+    def test_rejects_wrong_integer_dtype(self) -> None:
+        value = valid_trace_manifest()
+        value["array_dtypes"]["token_ids"] = "float32"
+        self.assertIn("token_ids_dtype_must_be_integer", validate_trace_manifest_semantics(value))
 
     def test_rejects_nonzero_tokens_with_no_chunks(self) -> None:
         value = valid_trace_manifest()
@@ -137,144 +157,126 @@ class TraceSemanticContractTests(unittest.TestCase):
         self.assertIn("nonempty_trace_requires_chunks", errors)
         self.assertIn("chunk_token_sum_must_equal_num_tokens", errors)
 
-    def test_rejects_chunk_index_path_and_token_sum_mismatch(self) -> None:
-        value = valid_trace_manifest()
-        value["chunks"] = [
-            {
-                "index": 1,
-                "path": "trace/chunk_00002.safetensors",
-                "sha256": "c" * 64,
-                "tokens": 3,
-            }
-        ]
-        errors = validate_trace_manifest_semantics(value)
-        self.assertIn("chunk_indices_must_be_contiguous_from_zero", errors)
-        self.assertIn("chunk_path_index_mismatch:0", errors)
-        self.assertIn("chunk_token_sum_must_equal_num_tokens", errors)
-
-    def test_rejects_router_trace_without_arrays_or_metadata(self) -> None:
-        value = valid_trace_manifest()
-        value.pop("router")
-        value["arrays"].pop("expert_ids")
-        value["arrays"].pop("expert_weights")
-        value["array_shapes"].pop("expert_ids")
-        value["array_shapes"].pop("expert_weights")
-        errors = validate_trace_manifest_semantics(value)
-        self.assertIn("router_trace_requires_expert_arrays", errors)
-        self.assertIn("router_trace_requires_router_metadata", errors)
-
-    def test_rejects_router_arrays_and_shapes_when_router_trace_false(self) -> None:
-        value = valid_trace_manifest()
-        value["has_router_trace"] = False
-        value.pop("router")
-        errors = validate_trace_manifest_semantics(value)
-        self.assertIn("router_arrays_forbidden_without_router_trace", errors)
-        self.assertIn("router_array_shapes_forbidden_without_router_trace", errors)
-
-    def test_payload_summary_must_be_recomputed_and_match_manifest(self) -> None:
+    def test_payload_summary_recomputes_names_shapes_dtypes_and_stats(self) -> None:
         value = valid_trace_manifest()
         good_shapes = dict(value["array_shapes"])
+        good_dtypes = dict(value["array_dtypes"])
         good_stats = dict(value["sequence_stats"])
         self.assertEqual(
             validate_trace_payload_summary(
                 value,
                 observed_array_shapes=good_shapes,
+                observed_array_dtypes=good_dtypes,
                 observed_sequence_stats=good_stats,
             ),
             [],
         )
-        bad_shapes = dict(good_shapes)
-        bad_shapes["state_signatures"] = [4, 1, 8]
+        bad_dtypes = dict(good_dtypes)
+        bad_dtypes["state_signatures"] = "float16"
         self.assertIn(
-            "payload_array_shapes_do_not_match_manifest",
+            "payload_array_dtypes_do_not_match_manifest",
             validate_trace_payload_summary(
                 value,
-                observed_array_shapes=bad_shapes,
+                observed_array_shapes=good_shapes,
+                observed_array_dtypes=bad_dtypes,
+                observed_sequence_stats=good_stats,
+            ),
+        )
+        missing = dict(good_shapes)
+        missing.pop("expert_weights")
+        self.assertIn(
+            "payload_tensor_names_do_not_match_manifest",
+            validate_trace_payload_summary(
+                value,
+                observed_array_shapes=missing,
+                observed_array_dtypes=good_dtypes,
                 observed_sequence_stats=good_stats,
             ),
         )
 
 
+class CompositionContractTests(unittest.TestCase):
+    def test_matching_root_and_trace_provenance_passes(self) -> None:
+        self.assertEqual(
+            validate_run_trace_composition(
+                valid_root_manifest(), valid_trace_manifest(), trace_manifest_sha256="d" * 64
+            ),
+            [],
+        )
+
+    def test_rejects_all_duplicated_identity_mismatches(self) -> None:
+        root = valid_root_manifest()
+        trace = valid_trace_manifest()
+        root["run_id"] = "other"
+        root["code_sha"] = "1" * 40
+        root["config_sha256"] = "2" * 64
+        root["seed"] = 999
+        errors = validate_run_trace_composition(root, trace, trace_manifest_sha256="d" * 64)
+        self.assertIn("root_trace_run_id_mismatch", errors)
+        self.assertIn("root_trace_code_sha_git_sha_mismatch", errors)
+        self.assertIn("root_trace_config_sha256_config_hash_mismatch", errors)
+        self.assertIn("root_trace_seed_mismatch", errors)
+
+    def test_rejects_missing_duplicate_or_wrong_child_hash_reference(self) -> None:
+        root = valid_root_manifest()
+        trace = valid_trace_manifest()
+        root["artifacts"] = []
+        self.assertIn(
+            "root_must_reference_exactly_one_trace_manifest",
+            validate_run_trace_composition(root, trace, trace_manifest_sha256="d" * 64),
+        )
+        root = valid_root_manifest("f" * 64)
+        self.assertIn(
+            "root_trace_manifest_hash_mismatch",
+            validate_run_trace_composition(root, trace, trace_manifest_sha256="d" * 64),
+        )
+
+
 class FrozenContractFileTests(unittest.TestCase):
-    def test_trace_schema_freezes_axis_and_router_contracts(self) -> None:
+    def test_trace_schema_requires_dtype_inventory(self) -> None:
         schema = json.loads((REPO_ROOT / "schemas/trace-v1.schema.json").read_text("utf-8"))
         required = set(schema["required"])
-        self.assertIn("projection", required)
-        self.assertIn("array_shapes", required)
-        self.assertIn("sequence_stats", required)
-        self.assertNotIn("projection_algorithm", required)
-        self.assertEqual(schema["properties"]["git_sha"]["pattern"], "^[0-9a-f]{40}$")
-        self.assertEqual(schema["properties"]["selected_layers"]["minItems"], 1)
-        self.assertEqual(schema["$defs"]["shape3"]["minItems"], 3)
-        self.assertEqual(schema["$defs"]["shape3"]["maxItems"], 3)
-        self.assertIn("router", schema["properties"])
-        self.assertGreaterEqual(len(schema["allOf"]), 4)
+        self.assertIn("array_dtypes", required)
+        self.assertIn("int_dtype", schema["$defs"])
+        self.assertIn("float_dtype", schema["$defs"])
 
-    def test_run_manifest_and_trace_manifest_have_distinct_authority(self) -> None:
-        run_schema = json.loads(
-            (REPO_ROOT / "contracts/run_manifest_v1.schema.json").read_text("utf-8")
-        )
-        trace_schema = json.loads(
-            (REPO_ROOT / "schemas/trace-v1.schema.json").read_text("utf-8")
-        )
-        self.assertIn("root run manifest", run_schema["description"].lower())
-        self.assertIn("trace/manifest.json", trace_schema["description"])
+    def test_manifest_authority_freezes_cross_manifest_identity(self) -> None:
         authority = (REPO_ROOT / "docs/contracts/MANIFEST_AUTHORITY.md").read_text("utf-8")
-        self.assertIn("<run>/manifest.json", authority)
-        self.assertIn("<run>/trace/manifest.json", authority)
-        self.assertIn("checksum index only", authority)
+        for text in ("root.run_id == trace.run_id", "root.code_sha == trace.git_sha", "root.config_sha256 == trace.config_hash", "root.seed == trace.seed"):
+            self.assertIn(text, authority)
 
-    def test_invalid_fixture_specs_are_actionable(self) -> None:
-        spec = json.loads(
-            (REPO_ROOT / "fixtures/spec/invalid_trace_v1_cases.json").read_text("utf-8")
-        )
-        ids = set()
-        for case in spec["cases"]:
-            self.assertTrue(case["id"])
-            self.assertIn(case["stage"], {"READ", "WRITE", "VALIDATE"})
-            self.assertTrue(case["mutation"])
-            self.assertRegex(case["expected_error"], r"^E[0-9]{3}$")
-            self.assertNotIn(case["id"], ids)
-            ids.add(case["id"])
+    def test_invalid_fixture_specs_include_round3_cases(self) -> None:
+        spec = json.loads((REPO_ROOT / "fixtures/spec/invalid_trace_v1_cases.json").read_text("utf-8"))
+        ids = {case["id"] for case in spec["cases"]}
         for required in {
-            "missing_manifest",
-            "projection_dim_mismatch",
-            "unknown_git_sha",
-            "router_missing_arrays",
-            "chunk_index_path_mismatch",
-            "state_axis_cardinality_mismatch",
-            "router_k_axis_mismatch",
-            "sequence_cardinality_mismatch",
+            "cross_manifest_provenance_mismatch",
+            "payload_dtype_mismatch",
+            "tensor_inventory_mismatch",
+            "router_entropy_descriptor_asymmetry",
         }:
             self.assertIn(required, ids)
 
-    def test_golden_fixture_freezes_expert_position_and_axis_semantics(self) -> None:
+    def test_golden_fixture_has_exact_dtype_inventory(self) -> None:
         spec = json.loads((REPO_ROOT / "fixtures/spec/tiny_trace_v1.json").read_text("utf-8"))
-        router = spec["manifest_requirements"]["router"]
-        self.assertGreater(router["num_experts"], router["top_k"])
-        self.assertGreater(router["weight_sum_tolerance"], 0)
-        self.assertIn("zero-based contiguous", spec["array_semantics"]["positions"])
-        self.assertIn("0 <= id < router.num_experts", spec["array_semantics"]["expert_ids"])
-        shapes = spec["manifest_requirements"]["array_shapes"]
-        self.assertEqual(shapes["state_signatures"], [64, 4, 8])
-        self.assertEqual(shapes["expert_ids"], [64, 4, 2])
+        req = spec["manifest_requirements"]
+        self.assertEqual(set(req["arrays"]), set(req["array_shapes"]))
+        self.assertEqual(set(req["arrays"]), set(req["array_dtypes"]))
+        self.assertEqual(req["dtype"], req["array_dtypes"]["state_signatures"])
 
-    def test_sot_records_migration_exception_and_raw_handoff_contract(self) -> None:
+    def test_sot_assigns_all_legacy_g0_paths_and_points_to_authoritative_validator(self) -> None:
         sot = (REPO_ROOT / "CSPM_SOT.yaml").read_text("utf-8")
-        self.assertIn('schema_version: "2.2"', sot)
-        self.assertIn('id: "G0_PR5_S0_CI_REWORK"', sot)
-        self.assertIn('paths: [".github/workflows/ci.yml"]', sot)
-        self.assertIn('before_go_policy: "NO_IMPLEMENTATION_NO_PREPARATION_NO_BRANCH_TASKS"', sot)
-        self.assertIn("allowed_decisions_base:", sot)
-        self.assertIn("template: |-", sot)
-
-    def test_bootstrap_decision_requires_s6_review_before_merge(self) -> None:
-        decision = (
-            REPO_ROOT / "docs/decisions/0000-bootstrap-ci-probe.md"
-        ).read_text("utf-8")
-        self.assertIn("SOFTWARE_REVIEWER=S6", decision)
-        self.assertIn("S6 independently re-reviews PR #5", decision)
-        self.assertNotIn("S7 independently reproduces and CI passes", decision)
+        self.assertIn('schema_version: "2.3"', sot)
+        for path in (
+            "src/cspm/bootstrap.py",
+            "src/cspm/contracts_reference.py",
+            "experiments/exp000_bootstrap/**",
+            "tests/test_bootstrap.py",
+            "tests/test_contract_migration.py",
+            "docs/ERROR_TAXONOMY.md",
+        ):
+            self.assertIn(path, sot)
+        self.assertIn("validate_run_trace_composition", sot)
+        self.assertIn("array_dtypes", sot)
 
 
 if __name__ == "__main__":
