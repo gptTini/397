@@ -82,6 +82,9 @@ class BootstrapUnitTests(unittest.TestCase):
             "result.json",
             "trace/manifest.json",
             "nested/a-b_1.json",
+            "com10.json",
+            "nulx",
+            "_meta/result-1.json",
         )
         invalid_paths = (
             "/outside/result.json",
@@ -95,6 +98,26 @@ class BootstrapUnitTests(unittest.TestCase):
             "C:/outside/result.json",
             "C:relative-result.json",
             "nested\\result.json",
+            "NUL",
+            "CON",
+            "AUX.txt",
+            "COM1",
+            "LPT1.txt",
+            "nul",
+            "con",
+            "aux.txt",
+            "com1",
+            "lpt1.txt",
+            "con.foo.bar",
+            "result.json:stream",
+            "nested/result.json:stream",
+            "trailing.",
+            "trailing ",
+            "nested/name.",
+            "nested/name ",
+            "UPPER.json",
+            "unicode/한글.json",
+            "double//slash",
         )
 
         for path in valid_paths:
@@ -106,6 +129,16 @@ class BootstrapUnitTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIsNone(pattern.fullmatch(path))
                 self.assertIn("artifact_0_path_invalid", validate_manifest_shape(_root_manifest_with_path(path)))
+
+    def test_manifest_authority_documents_portable_path_contract(self) -> None:
+        authority = (REPO_ROOT / "docs/contracts/MANIFEST_AUTHORITY.md").read_text("utf-8")
+        for required in (
+            "lowercase ASCII",
+            "Windows reserved device",
+            "alternate data stream",
+            "trailing dot or space",
+        ):
+            self.assertIn(required, authority)
 
 
 class Exp000IntegrationTests(unittest.TestCase):
