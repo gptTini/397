@@ -72,7 +72,9 @@ def run(out_dir: Path, seed: int, sample_count: int) -> dict:
     result_sha = write_canonical_json(result_path, result)
 
     config_path = out_dir / "config.json"
-    write_canonical_json(config_path, config)
+    config_sha = write_canonical_json(config_path, config)
+    dataset_path = out_dir / "dataset_identity.json"
+    dataset_sha = write_canonical_json(dataset_path, dataset_identity)
 
     completed = utc_now()
     manifest = build_manifest(
@@ -84,13 +86,18 @@ def run(out_dir: Path, seed: int, sample_count: int) -> dict:
         seed=seed,
         started_at=started,
         completed_at=completed,
-        artifacts=[{"path": str(result_path), "sha256": result_sha}],
+        artifacts=[{"path": "result.json", "sha256": result_sha}],
         metrics={
             "sample_count": sample_count,
             "weighted_checksum": result["weighted_checksum"],
             "result_bytes": result_path.stat().st_size,
         },
     )
+    if manifest["config_sha256"] != config_sha:
+        raise RuntimeError("config hash does not match emitted config.json")
+    if manifest["dataset_sha256"] != dataset_sha:
+        raise RuntimeError("dataset hash does not match emitted dataset_identity.json")
+
     errors = validate_manifest_shape(manifest)
     if errors:
         raise RuntimeError("invalid manifest: " + ";".join(errors))
@@ -102,11 +109,19 @@ def run(out_dir: Path, seed: int, sample_count: int) -> dict:
     verification = {
         "result_sha256_recorded": result_sha,
         "result_sha256_actual": actual_sha,
-        "match": result_sha == actual_sha,
+        "config_sha256_recorded": manifest["config_sha256"],
+        "config_sha256_actual": sha256_file(config_path),
+        "dataset_sha256_recorded": manifest["dataset_sha256"],
+        "dataset_sha256_actual": sha256_file(dataset_path),
+        "match": (
+            result_sha == actual_sha
+            and manifest["config_sha256"] == sha256_file(config_path)
+            and manifest["dataset_sha256"] == sha256_file(dataset_path)
+        ),
     }
     write_canonical_json(out_dir / "verification.json", verification)
     if not verification["match"]:
-        raise RuntimeError("artifact hash mismatch")
+        raise RuntimeError("artifact/config/dataset hash mismatch")
 
     return manifest
 
