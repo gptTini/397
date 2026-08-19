@@ -1,0 +1,20 @@
+{
+  "fixture_id": "tiny_trace_v1",
+  "contract": "trace-v1",
+  "purpose": "shared deterministic golden fixture for S1/S2/S3/S4/S6",
+  "shape": {"T": 64, "L": 4, "D": 8, "K": 2},
+  "seed": 397,
+  "requirements": {
+    "sequence_count": 4,
+    "tokens_per_sequence": 16,
+    "positions_restart_at_sequence_boundary": true,
+    "state_signatures_finite": true,
+    "expert_ids_in_range": true,
+    "expert_weights_nonnegative": true,
+    "expert_weights_sum_per_token_layer": 1.0,
+    "deterministic_generation": true
+  },
+  "producer": "S0 fixture generator or frozen committed small artifact",
+  "consumers": ["S1", "S2", "S3", "S4", "S6"],
+  "note": "This file freezes fixture semantics. Binary safetensors payload is added only with deterministic generator + hash validation."
+}
