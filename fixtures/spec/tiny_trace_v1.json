@@ -2,19 +2,36 @@
   "fixture_id": "tiny_trace_v1",
   "contract": "trace-v1",
   "purpose": "shared deterministic golden fixture for S1/S2/S3/S4/S6",
-  "shape": {"T": 64, "L": 4, "D": 8, "K": 2},
+  "shape": {"T":64,"L":4,"D":8,"K":2},
   "seed": 397,
+  "manifest_requirements": {
+    "git_sha": "40 lowercase hex characters",
+    "projection": {"algorithm":"fixed_seeded_random_projection","seed":397,"input_dim":16,"output_dim":8},
+    "signature_dim": 8,
+    "num_sequences": 4,
+    "num_tokens": 64,
+    "num_layers": 4,
+    "selected_layers": [0,1,2,3],
+    "has_router_trace": true,
+    "router": {"num_experts":8,"top_k":2,"weight_sum_tolerance":0.000001},
+    "chunk_tokens": [32,32]
+  },
+  "array_semantics": {
+    "sequence_ids": "four contiguous blocks of 16 tokens",
+    "positions": "zero-based contiguous 0..15 inside each sequence; restart at sequence boundary",
+    "state_signatures": "all values finite",
+    "expert_ids": "all ids satisfy 0 <= id < router.num_experts",
+    "expert_weights": "finite, nonnegative, and each [token,layer,:] sum is within tolerance of 1"
+  },
   "requirements": {
-    "sequence_count": 4,
-    "tokens_per_sequence": 16,
-    "positions_restart_at_sequence_boundary": true,
-    "state_signatures_finite": true,
-    "expert_ids_in_range": true,
-    "expert_weights_nonnegative": true,
-    "expert_weights_sum_per_token_layer": 1.0,
-    "deterministic_generation": true
+    "deterministic_generation": true,
+    "projection_output_dim_equals_signature_dim": true,
+    "chunk_indices_contiguous_from_zero": true,
+    "chunk_path_matches_index": true,
+    "chunk_token_sum_equals_num_tokens": true,
+    "complete_sentinel_required": true
   },
   "producer": "S0 fixture generator or frozen committed small artifact",
-  "consumers": ["S1", "S2", "S3", "S4", "S6"],
-  "note": "This file freezes fixture semantics. Binary safetensors payload is added only with deterministic generator + hash validation."
+  "consumers": ["S1","S2","S3","S4","S6"],
+  "note": "This specification freezes semantics. Binary safetensors payload is added only with deterministic generator and recorded SHA-256."
 }
