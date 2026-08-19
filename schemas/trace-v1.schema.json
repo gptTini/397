@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cspm397.local/schemas/trace-v1.schema.json",
+  "title": "TraceArtifact v1 Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "run_id", "model_id", "model_revision", "git_sha",
+    "config_hash", "seed", "projection", "dtype", "signature_dim",
+    "num_sequences", "num_tokens", "num_layers", "selected_layers",
+    "has_router_trace", "created_at", "arrays", "chunks"
+  ],
+  "properties": {
+    "schema_version": {"const": "trace-v1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "model_id": {"type": "string", "minLength": 1},
+    "model_revision": {"type": "string", "minLength": 1},
+    "git_sha": {"type": "string", "minLength": 7},
+    "config_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "seed": {"type": "integer"},
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "seed", "input_dim", "output_dim"],
+      "properties": {
+        "algorithm": {"type": "string", "minLength": 1},
+        "seed": {"type": "integer"},
+        "input_dim": {"type": "integer", "minimum": 1},
+        "output_dim": {"type": "integer", "minimum": 1}
+      }
+    },
+    "dtype": {"type": "string", "minLength": 1},
+    "signature_dim": {"type": "integer", "minimum": 1},
+    "num_sequences": {"type": "integer", "minimum": 0},
+    "num_tokens": {"type": "integer", "minimum": 0},
+    "num_layers": {"type": "integer", "minimum": 1},
+    "selected_layers": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 0},
+      "uniqueItems": true
+    },
+    "has_router_trace": {"type": "boolean"},
+    "created_at": {"type": "string", "minLength": 1},
+    "arrays": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token_ids", "sequence_ids", "positions", "state_signatures"],
+      "properties": {
+        "token_ids": {"const": "[T]"},
+        "sequence_ids": {"const": "[T]"},
+        "positions": {"const": "[T]"},
+        "state_signatures": {"const": "[T,L,D]"},
+        "expert_ids": {"const": "[T,L,K]"},
+        "expert_weights": {"const": "[T,L,K]"},
+        "router_entropy": {"type": "string"}
+      }
+    },
+    "chunks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "path", "sha256", "tokens"],
+        "properties": {
+          "index": {"type": "integer", "minimum": 0},
+          "path": {"type": "string", "pattern": "^trace/chunk_[0-9]{5}\\.safetensors$"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "tokens": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  }
+}
