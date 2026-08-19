@@ -36,13 +36,14 @@ Every session MUST do this before editing code:
 
 This project uses compact raw handoffs by default. Do not spend time generating charts, HTML, polished reports, or duplicate prose summaries unless S0 explicitly requests them.
 
-## Current bootstrap command
+## Clean-checkout bootstrap commands
 
 Until replaced by a later SOT revision:
 
 ```bash
+python -m pip install -e .
 python -m unittest discover -s tests -p 'test_*.py' -v
 python experiments/exp000_bootstrap/run.py --out runs/exp000/bootstrap
 ```
 
-The second command writes raw runtime artifacts under `runs/`, which is not committed.
+The final command writes raw runtime artifacts under `runs/`, which is not committed. Re-running with the same output directory MUST fail rather than overwrite data.
