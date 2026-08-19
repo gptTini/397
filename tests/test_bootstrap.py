@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
@@ -13,6 +15,16 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from cspm.bootstrap import canonical_json_bytes, sha256_file, validate_manifest_shape
+
+
+def _load_exp000_module():
+    path = REPO_ROOT / "experiments/exp000_bootstrap/run.py"
+    spec = importlib.util.spec_from_file_location("cspm_exp000_run_for_test", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load EXP000 module")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class BootstrapUnitTests(unittest.TestCase):
@@ -102,11 +114,35 @@ class Exp000IntegrationTests(unittest.TestCase):
             self.assertEqual(verify_a["config_sha256_recorded"], verify_a["config_sha256_actual"])
             self.assertEqual(verify_a["dataset_sha256_recorded"], verify_a["dataset_sha256_actual"])
 
+            self.assertEqual((run_a / "COMPLETE").read_bytes(), b"CSPM_RUN_COMPLETE_V1\n")
+            self.assertEqual((run_b / "COMPLETE").read_bytes(), b"CSPM_RUN_COMPLETE_V1\n")
+            self.assertFalse((run_a / ".COMPLETE.tmp").exists())
+            self.assertFalse((run_b / ".COMPLETE.tmp").exists())
+
+    def test_failure_before_final_commit_never_writes_complete(self) -> None:
+        module = _load_exp000_module()
+        original_write = module.write_canonical_json
+
+        def fail_on_verification(path, value):
+            if Path(path).name == "verification.json":
+                raise RuntimeError("injected failure before completion")
+            return original_write(path, value)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "partial_run"
+            with mock.patch.object(module, "write_canonical_json", side_effect=fail_on_verification):
+                with self.assertRaisesRegex(RuntimeError, "injected failure"):
+                    module.run(out, 397, 32)
+            self.assertTrue(out.exists())
+            self.assertFalse((out / "COMPLETE").exists())
+            self.assertFalse((out / ".COMPLETE.tmp").exists())
+
     def test_existing_run_directory_is_never_overwritten_or_mutated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "same_run"
             first = self._run(out)
             self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertTrue((out / "COMPLETE").exists())
             before = {p.name: p.read_bytes() for p in out.iterdir() if p.is_file()}
 
             second = self._run(out)
