@@ -5,7 +5,12 @@
   "cases": [
     {"id":"bad_hash","stage":"READ","mutation":"replace chunk_00000 sha256 with 64 zeroes while bytes remain unchanged","expected_error":"E320"},
     {"id":"missing_manifest","stage":"READ","mutation":"remove trace/manifest.json","expected_error":"E310"},
-    {"id":"wrong_shape","stage":"VALIDATE","mutation":"declare state_signatures shape other than [T,L,D]","expected_error":"E110"},
+    {"id":"wrong_shape","stage":"VALIDATE","mutation":"declare a symbolic array contract other than the TraceArtifact v1 symbol for that array","expected_error":"E110"},
+    {"id":"state_axis_cardinality_mismatch","stage":"VALIDATE","mutation":"set selected_layers from four ids to one id while array_shapes.state_signatures remains [64,4,8]","expected_error":"E110"},
+    {"id":"router_k_axis_mismatch","stage":"VALIDATE","mutation":"set router.top_k from 2 to 3 while expert array_shapes remain [64,4,2]","expected_error":"E110"},
+    {"id":"sequence_cardinality_mismatch","stage":"VALIDATE","mutation":"set num_sequences=0 while num_tokens=64 and sequence_stats.unique_count=0","expected_error":"E110"},
+    {"id":"payload_shape_manifest_mismatch","stage":"VALIDATE","mutation":"actual loaded state_signatures shape is [64,3,8] while manifest array_shapes declares [64,4,8]","expected_error":"E110"},
+    {"id":"payload_sequence_stats_manifest_mismatch","stage":"VALIDATE","mutation":"actual sequence_ids contain 3 unique ids while manifest sequence_stats.unique_count=4","expected_error":"E110"},
     {"id":"nan_state","stage":"VALIDATE","mutation":"set one state_signatures element to NaN","expected_error":"E510"},
     {"id":"inf_state","stage":"VALIDATE","mutation":"set one state_signatures element to +Inf","expected_error":"E520"},
     {"id":"negative_position","stage":"VALIDATE","mutation":"set one positions element to -1","expected_error":"E110"},
@@ -20,7 +25,7 @@
     {"id":"empty_chunks_nonzero_tokens","stage":"VALIDATE","mutation":"set num_tokens=1 and chunks=[]","expected_error":"E110"},
     {"id":"projection_dim_mismatch","stage":"VALIDATE","mutation":"set projection.output_dim different from signature_dim","expected_error":"E110"},
     {"id":"unknown_git_sha","stage":"VALIDATE","mutation":"set git_sha=UNKNOWN","expected_error":"E110"},
-    {"id":"router_missing_arrays","stage":"VALIDATE","mutation":"set has_router_trace=true but omit expert_ids/expert_weights array declarations","expected_error":"E110"},
+    {"id":"router_missing_arrays","stage":"VALIDATE","mutation":"set has_router_trace=true but omit expert_ids/expert_weights declarations or array_shapes","expected_error":"E110"},
     {"id":"tmp_only_partial_write","stage":"WRITE","mutation":"leave trace/chunk_00000.tmp without atomic rename","expected_error":"E300"},
     {"id":"missing_complete_sentinel","stage":"READ","mutation":"remove COMPLETE from otherwise finished run","expected_error":"E310"}
   ]
