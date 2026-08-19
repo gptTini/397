@@ -41,7 +41,16 @@ The root `dtype` field in TraceArtifact v1 means **state-signature dtype only** 
 
 ## Path rule
 
-All manifest artifact paths are run-relative POSIX-style paths. Absolute paths and `..` traversal are forbidden.
+All RunManifest artifact paths use one canonical cross-platform subset rather than host-native path syntax.
+
+- Paths are run-relative, use `/` separators, and consist of lowercase ASCII segments only.
+- Segment characters are limited to `a-z`, `0-9`, `_`, `-`, and `.`; a segment cannot start or end with `.`.
+- Empty segments, repeated separators, raw `.`/`..` segments, absolute paths, drive-prefixed paths, backslashes, spaces, Unicode aliases, and uppercase/case-fold aliases are invalid.
+- `:` is invalid, so Windows alternate data stream forms such as `result.json:stream` are impossible.
+- A segment whose basename before the first `.` is a Windows reserved device name is invalid, case-independently by canonical lowercase rule: `con`, `prn`, `aux`, `nul`, `com1` through `com9`, and `lpt1` through `lpt9`. Extensions do not make a reserved device name valid.
+- A trailing dot or space is invalid and cannot create a Windows-normalized alias.
+
+`contracts/run_manifest_v1.schema.json` and `src/cspm/bootstrap.py::_is_safe_run_relative_path` MUST accept and reject the same path set. Any disagreement is a contract defect (`E110`).
 
 ## Validation order
 
