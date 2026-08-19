@@ -113,8 +113,12 @@ def _is_safe_run_relative_path(value: str) -> bool:
 
 
 def _is_json_integer(value: Any) -> bool:
-    """JSON Schema integer semantics: bool is not an integer."""
-    return isinstance(value, int) and not isinstance(value, bool)
+    """Match JSON Schema integer semantics, including 397.0 but excluding bool."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    return isinstance(value, float) and value.is_integer()
 
 
 def validate_run_manifest(manifest: Any) -> list[str]:
