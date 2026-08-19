@@ -39,7 +39,8 @@
           "path": {
             "type": "string",
             "minLength": 1,
-            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+            "description": "Run-relative POSIX-style path. Backslashes, POSIX absolute paths, Windows drive prefixes, and dot/dot-dot path segments are forbidden.",
+            "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$)).+$"
           },
           "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
         }
