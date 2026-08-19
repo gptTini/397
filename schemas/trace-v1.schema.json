@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cspm397.local/schemas/trace-v1.schema.json",
+  "title": "TraceArtifact v1 Manifest",
+  "description": "Child manifest at trace/manifest.json. arrays, array_shapes, array_dtypes and sequence_stats are payload-derived and independently recomputed by readers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "run_id", "model_id", "model_revision", "git_sha",
+    "config_hash", "seed", "projection", "dtype", "signature_dim",
+    "num_sequences", "num_tokens", "num_layers", "selected_layers",
+    "has_router_trace", "created_at", "arrays", "array_shapes",
+    "array_dtypes", "sequence_stats", "chunks"
+  ],
+  "properties": {
+    "schema_version": {"const": "trace-v1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "model_id": {"type": "string", "minLength": 1},
+    "model_revision": {"type": "string", "minLength": 1},
+    "git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "config_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "seed": {"type": "integer"},
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "seed", "input_dim", "output_dim"],
+      "properties": {
+        "algorithm": {"type": "string", "minLength": 1},
+        "seed": {"type": "integer"},
+        "input_dim": {"type": "integer", "minimum": 1},
+        "output_dim": {"type": "integer", "minimum": 1}
+      }
+    },
+    "dtype": {"enum": ["float16", "bfloat16", "float32"], "description": "State-signature dtype; must equal array_dtypes.state_signatures."},
+    "signature_dim": {"type": "integer", "minimum": 1},
+    "num_sequences": {"type": "integer", "minimum": 0},
+    "num_tokens": {"type": "integer", "minimum": 0},
+    "num_layers": {"type": "integer", "minimum": 1},
+    "selected_layers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "integer", "minimum": 0},
+      "uniqueItems": true
+    },
+    "has_router_trace": {"type": "boolean"},
+    "router": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["num_experts", "top_k", "weight_sum_tolerance"],
+      "properties": {
+        "num_experts": {"type": "integer", "minimum": 1},
+        "top_k": {"type": "integer", "minimum": 1},
+        "weight_sum_tolerance": {"type": "number", "exclusiveMinimum": 0, "maximum": 0.1}
+      }
+    },
+    "created_at": {"type": "string", "minLength": 1},
+    "arrays": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token_ids", "sequence_ids", "positions", "state_signatures"],
+      "properties": {
+        "token_ids": {"const": "[T]"},
+        "sequence_ids": {"const": "[T]"},
+        "positions": {"const": "[T]"},
+        "state_signatures": {"const": "[T,L,D]"},
+        "expert_ids": {"const": "[T,L,K]"},
+        "expert_weights": {"const": "[T,L,K]"},
+        "router_entropy": {"const": "[T,L]"}
+      }
+    },
+    "array_shapes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token_ids", "sequence_ids", "positions", "state_signatures"],
+      "properties": {
+        "token_ids": {"$ref": "#/$defs/shape1"},
+        "sequence_ids": {"$ref": "#/$defs/shape1"},
+        "positions": {"$ref": "#/$defs/shape1"},
+        "state_signatures": {"$ref": "#/$defs/shape3"},
+        "expert_ids": {"$ref": "#/$defs/shape3"},
+        "expert_weights": {"$ref": "#/$defs/shape3"},
+        "router_entropy": {"$ref": "#/$defs/shape2"}
+      }
+    },
+    "array_dtypes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token_ids", "sequence_ids", "positions", "state_signatures"],
+      "properties": {
+        "token_ids": {"$ref": "#/$defs/int_dtype"},
+        "sequence_ids": {"$ref": "#/$defs/int_dtype"},
+        "positions": {"$ref": "#/$defs/int_dtype"},
+        "state_signatures": {"$ref": "#/$defs/float_dtype"},
+        "expert_ids": {"$ref": "#/$defs/int_dtype"},
+        "expert_weights": {"$ref": "#/$defs/float_dtype"},
+        "router_entropy": {"$ref": "#/$defs/float_dtype"}
+      }
+    },
+    "sequence_stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unique_count", "min_id", "max_id", "ids_contiguous_zero_based",
+        "positions_zero_based_contiguous", "sequences_interleaved"
+      ],
+      "properties": {
+        "unique_count": {"type": "integer", "minimum": 0},
+        "min_id": {"type": ["integer", "null"], "minimum": 0},
+        "max_id": {"type": ["integer", "null"], "minimum": 0},
+        "ids_contiguous_zero_based": {"type": "boolean"},
+        "positions_zero_based_contiguous": {"type": "boolean"},
+        "sequences_interleaved": {"type": "boolean"}
+      }
+    },
+    "chunks": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "path", "sha256", "tokens"],
+        "properties": {
+          "index": {"type": "integer", "minimum": 0},
+          "path": {"type": "string", "pattern": "^trace/chunk_[0-9]{5}\\.safetensors$"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "tokens": {"type": "integer", "minimum": 1}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "shape1": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"type": "integer", "minimum": 0}},
+    "shape2": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 0}},
+    "shape3": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "integer", "minimum": 0}},
+    "int_dtype": {"enum": ["int32", "int64"]},
+    "float_dtype": {"enum": ["float16", "bfloat16", "float32"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"num_tokens": {"minimum": 1}}, "required": ["num_tokens"]},
+      "then": {"properties": {"chunks": {"minItems": 1}, "num_sequences": {"minimum": 1}}}
+    },
+    {
+      "if": {"properties": {"num_tokens": {"const": 0}}, "required": ["num_tokens"]},
+      "then": {"properties": {"chunks": {"maxItems": 0}, "num_sequences": {"const": 0}}}
+    },
+    {
+      "if": {"properties": {"has_router_trace": {"const": true}}, "required": ["has_router_trace"]},
+      "then": {
+        "required": ["router"],
+        "properties": {
+          "arrays": {"required": ["expert_ids", "expert_weights"]},
+          "array_shapes": {"required": ["expert_ids", "expert_weights"]},
+          "array_dtypes": {"required": ["expert_ids", "expert_weights"]}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"has_router_trace": {"const": false}}, "required": ["has_router_trace"]},
+      "then": {
+        "not": {
+          "anyOf": [
+            {"required": ["router"]},
+            {"properties": {"arrays": {"required": ["expert_ids"]}}},
+            {"properties": {"arrays": {"required": ["expert_weights"]}}},
+            {"properties": {"arrays": {"required": ["router_entropy"]}}},
+            {"properties": {"array_shapes": {"required": ["expert_ids"]}}},
+            {"properties": {"array_shapes": {"required": ["expert_weights"]}}},
+            {"properties": {"array_shapes": {"required": ["router_entropy"]}}},
+            {"properties": {"array_dtypes": {"required": ["expert_ids"]}}},
+            {"properties": {"array_dtypes": {"required": ["expert_weights"]}}},
+            {"properties": {"array_dtypes": {"required": ["router_entropy"]}}}
+          ]
+        }
+      }
+    }
+  ]
+}
