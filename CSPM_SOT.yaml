@@ -1,22 +1,19 @@
-schema_version: "2.1"
+schema_version: "2.2"
 project:
   id: "CSPM397"
   repo: "gptTini/397"
   name: "Chrono-Synaptic Program Machine"
-  status: "G0_REWORK_PENDING_S6_REREVIEW"
+  status: "G0_REWORK_ROUND2_PENDING_S6_REREVIEW"
   source_of_truth: "CSPM_SOT.yaml"
-  plan_revision: "feasibility-first-2026-08-20-r1"
+  plan_revision: "feasibility-first-2026-08-20-r2"
 
 mission:
   research_question: >-
     Can repeated language-model computation be represented as predictable temporal
     state transitions and later replaced by memory + compiled macros + residual
     correction while preserving behavior and reducing real end-to-end latency?
-  phase_a_goal: >-
-    Prove the phenomenon and measurement stack before building CSPM runtime modules.
-  phase_b_goal: >-
-    Only after S7 issues GO_CSPM, design and build Synaptic Memory, Macro Compiler,
-    ChronoRouter, Residual NeuroCore, and the end-to-end runtime.
+  phase_a_goal: "Prove the phenomenon and measurement stack before building CSPM runtime modules."
+  phase_b_goal: "Only after S7 issues GO_CSPM, design and build CSPM runtime modules."
   non_goals:
     - "Do not brute-force full 397B inference on weak local hardware."
     - "Do not claim success from latent similarity alone."
@@ -108,6 +105,15 @@ branch_policy:
   worker_must_record_base_sha: true
   contract_change_requires: ["explicit S0 task", "tests", "S6 contract review", "S7 review if scientific semantics change"]
   deprecated_branches: ["cspm/tracelab", "cspm/state", "cspm/reviewer", "cspm/memory", "cspm/macro", "cspm/neurocore", "cspm/runtime"]
+  migration_exceptions:
+    - id: "G0_PR5_S0_CI_REWORK"
+      pr: 5
+      authorized_session: "S0"
+      normal_owner: "S6"
+      paths: [".github/workflows/ci.yml"]
+      reason: "S6 initial G0 review delegated B007 rework to S0 via NEXT=S0_FIX_PR5; exception is limited to the existing PR #5 G0 migration rework."
+      approval: "S6 must independently rereview the resulting current head before merge."
+      expires: "when PR #5 is merged or closed"
 
 manifest_authority:
   root_run_manifest:
@@ -119,7 +125,7 @@ manifest_authority:
     path: "<run>/trace/manifest.json"
     contract: "TraceArtifact v1"
     schema: "schemas/trace-v1.schema.json"
-    authority: "trace arrays, projection, router metadata, chunk ordering and hashes"
+    authority: "trace arrays, exact axis metadata, projection, sequence/router metadata, chunk ordering and hashes"
   checksum_index:
     path: "<run>/hashes/sha256.json"
     authority: "checksum index only; never a manifest"
@@ -133,13 +139,22 @@ manifest_authority:
 trace_artifact_v1:
   manifest_path: "trace/manifest.json"
   schema: "schemas/trace-v1.schema.json"
-  semantic_validator: "src/cspm/bootstrap.py::validate_trace_manifest_semantics (bootstrap reference; S2/S6 production validator must preserve behavior)"
+  semantic_validator: "src/cspm/bootstrap.py::validate_trace_manifest_semantics"
+  payload_validation_rule: >-
+    Manifest shape/stat metadata is not trusted. Producers derive it from actual tensors;
+    consumers MUST recompute array shapes and sequence statistics from loaded tensors and
+    reject any mismatch before analysis. S2/S6 production validators must preserve this rule.
   storage:
     tensor: ".safetensors"
     metadata: ".json"
     event_log: ".jsonl"
     chunks: true
     complete_sentinel: "COMPLETE"
+  axis_symbols:
+    T: "num_tokens"
+    L: "len(selected_layers), not num_layers"
+    D: "signature_dim and projection.output_dim"
+    K: "router.top_k when has_router_trace=true"
   required_arrays:
     token_ids: "[T]"
     sequence_ids: "[T]"
@@ -149,6 +164,27 @@ trace_artifact_v1:
     expert_ids: "[T,L,K]"
     expert_weights: "[T,L,K]"
     router_entropy: "[T,L]"
+  required_array_shapes:
+    token_ids: "[num_tokens]"
+    sequence_ids: "[num_tokens]"
+    positions: "[num_tokens]"
+    state_signatures: "[num_tokens,len(selected_layers),signature_dim]"
+    router_true_expert_ids: "[num_tokens,len(selected_layers),router.top_k]"
+    router_true_expert_weights: "[num_tokens,len(selected_layers),router.top_k]"
+    optional_router_entropy: "[num_tokens,len(selected_layers)]"
+  required_sequence_stats:
+    unique_count: "must equal num_sequences"
+    min_id: "null for empty trace; otherwise 0"
+    max_id: "null for empty trace; otherwise num_sequences-1"
+    ids_contiguous_zero_based: "must be true"
+    positions_zero_based_contiguous: "must be true"
+    sequences_interleaved: "must be false"
+  sequence_contract:
+    - "num_tokens=0 iff num_sequences=0"
+    - "num_tokens>0 requires 1 <= num_sequences <= num_tokens"
+    - "sequence_ids values are exactly contiguous integer ids 0..num_sequences-1 and every id appears"
+    - "within each sequence positions are exactly 0..N-1"
+    - "sequence blocks do not interleave"
   required_metadata:
     schema_version: "trace-v1"
     run_id: "nonempty string"
@@ -164,7 +200,7 @@ trace_artifact_v1:
       output_dim: ">=1 and MUST equal signature_dim"
     dtype: ["float16", "bfloat16", "float32"]
     signature_dim: ">=1"
-    num_sequences: ">=0"
+    num_sequences: ">=0 subject to sequence_contract"
     num_tokens: ">=0"
     num_layers: ">=1"
     selected_layers: "nonempty unique layer ids; each 0 <= id < num_layers"
@@ -179,7 +215,7 @@ trace_artifact_v1:
       required_arrays: ["expert_ids", "expert_weights"]
       expert_id_rule: "0 <= id < num_experts"
       expert_weight_rule: "finite, nonnegative, selected weights sum to 1 within tolerance"
-    when_has_router_trace_false: "router metadata and router arrays are forbidden"
+    when_has_router_trace_false: "router metadata, router arrays, and router array_shapes are forbidden"
   chunk_semantics:
     - "num_tokens>0 requires >=1 chunk; num_tokens=0 requires zero chunks"
     - "indices are contiguous 0..N-1"
@@ -187,9 +223,10 @@ trace_artifact_v1:
     - "chunk paths are unique"
     - "chunk tokens are positive"
     - "sum(chunk.tokens) == num_tokens"
+    - "on load, each chunk tensor T-axis must equal chunk.tokens and non-T axes must match global axis bindings"
   array_semantics:
-    positions: "within each sequence positions are zero-based contiguous; new sequence restarts 0; sequences do not interleave"
-    numeric: "state signatures and router weights must be finite"
+    positions: "zero-based contiguous within sequence; new sequence restarts 0; sequences do not interleave"
+    numeric: "state signatures and router numeric arrays must be finite"
 
 artifact_policy:
   immutable_runs: true
@@ -202,32 +239,12 @@ artifact_policy:
 
 error_taxonomy:
   document: "docs/ERROR_TAXONOMY.md"
-  codes:
-    E100: CONTRACT
-    E110: SCHEMA
-    E200: MODEL_LOAD
-    E210: TOKENIZER
-    E220: TRACE
-    E230: ROUTER
-    E300: ARTIFACT_WRITE
-    E310: ARTIFACT_READ
-    E320: ARTIFACT_CORRUPT
-    E400: CUDA
-    E410: OOM
-    E420: DEVICE
-    E500: NUMERIC
-    E510: NAN
-    E520: INF
-    E600: PREDICTABILITY
-    E610: TRAJECTORY
-    E700: EXPERIMENT
-    E800: DETERMINISM
-    E900: INTERNAL
+  codes: {E100: CONTRACT, E110: SCHEMA, E200: MODEL_LOAD, E210: TOKENIZER, E220: TRACE, E230: ROUTER, E300: ARTIFACT_WRITE, E310: ARTIFACT_READ, E320: ARTIFACT_CORRUPT, E400: CUDA, E410: OOM, E420: DEVICE, E500: NUMERIC, E510: NAN, E520: INF, E600: PREDICTABILITY, E610: TRAJECTORY, E700: EXPERIMENT, E800: DETERMINISM, E900: INTERNAL}
   precedence:
     - "E410 wins over E400 for OOM"
     - "E510/E520 win over E500 for NaN/Inf"
     - "missing required artifact/file/sentinel at read stage -> E310"
-    - "present but schema/semantic-invalid manifest -> E110"
+    - "present but schema/semantic-invalid manifest or payload contract -> E110"
     - "hash mismatch/truncated immutable bytes -> E320"
 
 fixtures:
@@ -272,32 +289,24 @@ ci_policy:
   g0_required:
     os: ["ubuntu-latest", "windows-latest"]
     python: ["3.11"]
-    checks: ["bootstrap unit/integration tests", "contract migration tests", "deterministic EXP000 smoke"]
-  before_wave1_worker_merge_expand_to:
-    - "formatting"
-    - "lint"
-    - "type_check"
-    - "unit_tests"
-    - "contract_tests"
-    - "integration_tests"
-    - "adversarial_smoke"
-    - "deterministic_smoke"
-    - "package_build"
+    checks: ["compile Python source/tests", "bootstrap unit/integration tests", "contract migration tests", "deterministic EXP000 smoke"]
+  before_wave1_worker_merge_expand_to: ["formatting", "lint", "type_check", "unit_tests", "contract_tests", "integration_tests", "adversarial_smoke", "deterministic_smoke", "package_build"]
   gpu_tests: "optional/manual; never silently skipped when a result depends on GPU behavior"
   branch_protection:
     desired: true
     current_connector_can_configure: false
     current_status: "NOT_ENFORCED_BY_REMOTE_RULESET"
     process_fallback: "NO_SELF_MERGE + S6 review + green PR CI"
-    followup: "configure required status checks/ruleset when repository-setting capability is available"
+    followup_issue: 6
 
 bootstrap_gates:
   G0:
-    status: "REWORK_PENDING_S6_REREVIEW"
+    status: "REWORK_ROUND2_PENDING_S6_REREVIEW"
     requires:
       - "contracts/schemas frozen enough for Wave-1"
       - "run-vs-trace manifest authority explicit"
-      - "TraceArtifact cross-field semantic rules frozen and tested"
+      - "TraceArtifact axis/cardinality/cross-field semantic rules frozen and tested"
+      - "payload readers required to recompute manifest shape/sequence statistics"
       - "error taxonomy precedence explicit"
       - "golden and invalid fixture specifications actionable"
       - "deterministic EXP000 with file-byte config/data/artifact hashes"
@@ -307,7 +316,7 @@ bootstrap_gates:
   W1_UNLOCK: "only after G0 PASS is recorded on merged main"
 
 migration_sequence:
-  - "S0 fixes S6 findings on PR #5"
+  - "S0 fixes S6 findings on PR #5 under recorded migration exceptions"
   - "PR #5 CI must pass Windows+Ubuntu"
   - "S6 re-reviews PR #5 and issue #1 before merge"
   - "S0 does NOT self-merge"
@@ -318,3 +327,23 @@ raw_handoff:
   version: "1"
   required_fields: ["SESSION", "STATUS", "TASK", "BRANCH", "HEAD", "BASE", "COMMANDS", "TESTS", "METRICS", "ARTIFACTS", "ERRORS", "DECISION", "NEXT"]
   allowed_status: ["PASS", "FAIL", "BLOCKED", "PARTIAL"]
+  allowed_decisions_base: ["READY_FOR_REVIEW", "REWORK", "BLOCKED"]
+  allowed_decision_extensions:
+    G0: ["G0_PASS_RECOMMENDED", "REWORK", "BLOCKED"]
+    SCIENCE: ["GO_CSPM", "NO_GO", "REWORK", "BLOCKED"]
+  task_specific_extension_rule: "Any additional DECISION value must be declared in the task/issue before execution."
+  template: |-
+    RAW-HANDOFF v1
+    SESSION=<Sx>
+    STATUS=<PASS|FAIL|BLOCKED|PARTIAL>
+    TASK=<task_id>
+    BRANCH=<branch>
+    HEAD=<sha>
+    BASE=<main_sha>
+    COMMANDS=<json-array>
+    TESTS=<json-object>
+    METRICS=<json-object>
+    ARTIFACTS=<json-array>
+    ERRORS=<json-array>
+    DECISION=<allowed decision>
+    NEXT=<task_or_none>
