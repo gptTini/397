@@ -204,6 +204,10 @@ class CompositionContractTests(unittest.TestCase):
             [],
         )
 
+    def test_child_manifest_sha_argument_is_mandatory(self) -> None:
+        with self.assertRaises(TypeError):
+            validate_run_trace_composition(valid_root_manifest(), valid_trace_manifest())
+
     def test_rejects_all_duplicated_identity_mismatches(self) -> None:
         root = valid_root_manifest()
         trace = valid_trace_manifest()
@@ -250,6 +254,7 @@ class FrozenContractFileTests(unittest.TestCase):
         ids = {case["id"] for case in spec["cases"]}
         for required in {
             "cross_manifest_provenance_mismatch",
+            "cross_manifest_child_hash_mismatch",
             "payload_dtype_mismatch",
             "tensor_inventory_mismatch",
             "router_entropy_descriptor_asymmetry",
