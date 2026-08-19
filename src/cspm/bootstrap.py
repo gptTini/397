@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -75,6 +75,13 @@ def build_manifest(
     }
 
 
+def _is_safe_run_relative_path(value: str) -> bool:
+    if not value or value.startswith(("/", "\\")) or "\\" in value:
+        return False
+    path = PurePosixPath(value)
+    return not path.is_absolute() and ".." not in path.parts and "." not in path.parts
+
+
 def validate_manifest_shape(manifest: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     required = {
@@ -95,20 +102,31 @@ def validate_manifest_shape(manifest: dict[str, Any]) -> list[str]:
         errors.append(f"missing_fields={missing}")
     if manifest.get("schema_version") != "1":
         errors.append("schema_version_must_equal_1")
+    code_sha = manifest.get("code_sha")
+    if not isinstance(code_sha, str) or _GIT40.fullmatch(code_sha) is None:
+        errors.append("code_sha_must_be_full_40_hex")
     for field in ("config_sha256", "dataset_sha256"):
         value = manifest.get(field)
         if not isinstance(value, str) or _HEX64.fullmatch(value) is None:
             errors.append(f"{field}_must_be_64_hex_chars")
     artifacts = manifest.get("artifacts")
-    if not isinstance(artifacts, list):
-        errors.append("artifacts_must_be_list")
+    if not isinstance(artifacts, list) or not artifacts:
+        errors.append("artifacts_must_be_nonempty_list")
     else:
+        seen_paths: set[str] = set()
         for index, artifact in enumerate(artifacts):
             if not isinstance(artifact, dict):
                 errors.append(f"artifact_{index}_must_be_object")
                 continue
             if set(artifact) != {"path", "sha256"}:
                 errors.append(f"artifact_{index}_fields_invalid")
+            path = artifact.get("path")
+            if not isinstance(path, str) or not _is_safe_run_relative_path(path):
+                errors.append(f"artifact_{index}_path_invalid")
+            elif path in seen_paths:
+                errors.append("duplicate_artifact_path")
+            else:
+                seen_paths.add(path)
             digest = artifact.get("sha256")
             if not isinstance(digest, str) or _HEX64.fullmatch(digest) is None:
                 errors.append(f"artifact_{index}_sha256_invalid")
@@ -131,9 +149,8 @@ def validate_trace_manifest_semantics(manifest: dict[str, Any]) -> list[str]:
     projection = manifest.get("projection")
     if not isinstance(projection, dict):
         errors.append("projection_must_be_object")
-    else:
-        if projection.get("output_dim") != signature_dim:
-            errors.append("projection_output_dim_must_equal_signature_dim")
+    elif projection.get("output_dim") != signature_dim:
+        errors.append("projection_output_dim_must_equal_signature_dim")
 
     num_layers = manifest.get("num_layers")
     selected_layers = manifest.get("selected_layers")
