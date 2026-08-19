@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cspm397.local/schemas/trace-v1.schema.json",
   "title": "TraceArtifact v1 Manifest",
+  "description": "Child manifest stored at trace/manifest.json. Root run manifest is governed separately by contracts/run_manifest_v1.schema.json.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -15,7 +16,7 @@
     "run_id": {"type": "string", "minLength": 1},
     "model_id": {"type": "string", "minLength": 1},
     "model_revision": {"type": "string", "minLength": 1},
-    "git_sha": {"type": "string", "minLength": 7},
+    "git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "config_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "seed": {"type": "integer"},
     "projection": {
@@ -29,17 +30,28 @@
         "output_dim": {"type": "integer", "minimum": 1}
       }
     },
-    "dtype": {"type": "string", "minLength": 1},
+    "dtype": {"enum": ["float16", "bfloat16", "float32"]},
     "signature_dim": {"type": "integer", "minimum": 1},
     "num_sequences": {"type": "integer", "minimum": 0},
     "num_tokens": {"type": "integer", "minimum": 0},
     "num_layers": {"type": "integer", "minimum": 1},
     "selected_layers": {
       "type": "array",
+      "minItems": 1,
       "items": {"type": "integer", "minimum": 0},
       "uniqueItems": true
     },
     "has_router_trace": {"type": "boolean"},
+    "router": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["num_experts", "top_k", "weight_sum_tolerance"],
+      "properties": {
+        "num_experts": {"type": "integer", "minimum": 1},
+        "top_k": {"type": "integer", "minimum": 1},
+        "weight_sum_tolerance": {"type": "number", "exclusiveMinimum": 0, "maximum": 0.1}
+      }
+    },
     "created_at": {"type": "string", "minLength": 1},
     "arrays": {
       "type": "object",
@@ -52,11 +64,12 @@
         "state_signatures": {"const": "[T,L,D]"},
         "expert_ids": {"const": "[T,L,K]"},
         "expert_weights": {"const": "[T,L,K]"},
-        "router_entropy": {"type": "string"}
+        "router_entropy": {"const": "[T,L]"}
       }
     },
     "chunks": {
       "type": "array",
+      "uniqueItems": true,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -65,9 +78,32 @@
           "index": {"type": "integer", "minimum": 0},
           "path": {"type": "string", "pattern": "^trace/chunk_[0-9]{5}\\.safetensors$"},
           "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-          "tokens": {"type": "integer", "minimum": 0}
+          "tokens": {"type": "integer", "minimum": 1}
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"num_tokens": {"minimum": 1}}, "required": ["num_tokens"]},
+      "then": {"properties": {"chunks": {"minItems": 1}}}
+    },
+    {
+      "if": {"properties": {"num_tokens": {"const": 0}}, "required": ["num_tokens"]},
+      "then": {"properties": {"chunks": {"maxItems": 0}}}
+    },
+    {
+      "if": {"properties": {"has_router_trace": {"const": true}}, "required": ["has_router_trace"]},
+      "then": {
+        "required": ["router"],
+        "properties": {"arrays": {"required": ["expert_ids", "expert_weights"]}}
+      }
+    },
+    {
+      "if": {"properties": {"has_router_trace": {"const": false}}, "required": ["has_router_trace"]},
+      "then": {
+        "not": {"required": ["router"]}
+      }
+    }
+  ]
 }
