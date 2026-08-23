@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "cspm://contracts/run_manifest_v1.schema.json",
   "title": "CSPM Run Manifest v1",
+  "description": "Authoritative root run manifest stored at <run>/manifest.json. Trace-specific shape/chunk semantics belong to <run>/trace/manifest.json under TraceArtifact v1.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -21,7 +22,7 @@
     "schema_version": {"const": "1"},
     "run_id": {"type": "string", "minLength": 1},
     "experiment_id": {"type": "string", "pattern": "^EXP[0-9]{3}$"},
-    "code_sha": {"type": "string", "minLength": 1},
+    "code_sha": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
     "config_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "dataset_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "seed": {"type": "integer"},
@@ -29,12 +30,18 @@
     "completed_at": {"type": "string", "minLength": 1},
     "artifacts": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["path", "sha256"],
         "properties": {
-          "path": {"type": "string", "minLength": 1},
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Canonical portable run-relative artifact path: lowercase ASCII segments separated by '/', characters [a-z0-9._-] only, no leading/trailing dot segment form, and no Windows reserved device basename. This excludes absolute/drive/UNC/backslash paths, dot/dot-dot traversal, ADS ':', spaces, trailing dot/space aliases, repeated separators, Unicode/case-fold aliases, and reserved CON/PRN/AUX/NUL/COM1-9/LPT1-9 names (including extensions).",
+            "pattern": "^(?!.*(?:^|/)(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.][a-z0-9._-]+)?(?:/|$))[a-z0-9_-](?:[a-z0-9._-]*[a-z0-9_-])?(?:/[a-z0-9_-](?:[a-z0-9._-]*[a-z0-9_-])?)*$"
+          },
           "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
         }
       }

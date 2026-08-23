@@ -11,14 +11,21 @@ permissions:
 
 jobs:
   bootstrap:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11"]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - name: Run tests
+          python-version: ${{ matrix.python-version }}
+      - name: Compile Python sources/tests
+        run: python -m compileall -q src experiments tests
+      - name: Run bootstrap and contract migration tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
       - name: EXP000 smoke
         run: python experiments/exp000_bootstrap/run.py --out runs/exp000/ci_smoke --seed 397 --sample-count 32

@@ -1,27 +1,24 @@
-schema_version: "1.0"
+schema_version: "2.3"
 project:
   id: "CSPM397"
   repo: "gptTini/397"
   name: "Chrono-Synaptic Program Machine"
-  short_name: "CSPM"
-  status: "BOOTSTRAP"
+  status: "G0_REWORK_ROUND3_PENDING_S6_REREVIEW"
   source_of_truth: "CSPM_SOT.yaml"
-  updated_utc: "2026-08-19T20:05:00Z"
+  plan_revision: "feasibility-first-2026-08-20-r3"
 
 mission:
   research_question: >-
     Can repeated language-model computation be represented as predictable temporal
-    state transitions and replaced by memory + compiled multi-step macros + residual
-    correction while preserving model behavior and reducing real end-to-end latency?
-  non_goal:
-    - "Do not treat CSPM as a way to brute-force full Qwen3.5-397B-A17B inference on weak local hardware."
+    state transitions and later replaced by memory + compiled macros + residual
+    correction while preserving behavior and reducing real end-to-end latency?
+  phase_a_goal: "Prove the phenomenon and measurement stack before building CSPM runtime modules."
+  phase_b_goal: "Only after S7 issues GO_CSPM, design and build CSPM runtime modules."
+  non_goals:
+    - "Do not brute-force full 397B inference on weak local hardware."
     - "Do not claim success from latent similarity alone."
     - "Do not claim speedup from FLOP reduction alone."
-  final_397_role:
-    - "offline knowledge teacher"
-    - "offline trajectory teacher"
-    - "offline macro-discovery/compiler teacher"
-    - "rare difficult-case repair teacher"
+    - "Do not implement or prepare Phase-B runtime modules before GO_CSPM."
 
 operating_mode:
   raw_mode: true
@@ -29,9 +26,6 @@ operating_mode:
   human_pretty_reports_default: false
   charts_default: false
   duplicate_summaries_default: false
-  rule: >-
-    Worker sessions emit only compact machine-readable handoffs and raw artifacts
-    unless the orchestrator explicitly requests human-readable interpretation.
 
 invariants:
   - "NO_HIDDEN_STATE"
@@ -43,194 +37,345 @@ invariants:
   - "NO_RESULT_WITHOUT_BASELINE"
   - "NO_RESULT_WITHOUT_REPRODUCTION"
   - "NO_RESULT_WITHOUT_SCIENCE_AUDIT"
+  - "NO_TEST_TOKEN_LEAKAGE"
+  - "NO_POSTHOC_GATE_RELAXATION"
   - "GITHUB_MAIN_IS_INTEGRATION_SOURCE_OF_TRUTH"
   - "LARGE_RUN_ARTIFACTS_ARE_NOT_COMMITTED_TO_GIT"
-  - "EVERY_RUN_HAS_CONFIG_SEED_CODE_SHA_DATA_SHA_AND_ARTIFACT_HASHES"
+  - "EVERY_RUN_HAS_CODE_CONFIG_DATA_MODEL_SEED_AND_ARTIFACT_IDENTITY"
+  - "ROOT_AND_CHILD_MANIFEST_PROVENANCE_MUST_AGREE"
+  - "TENSOR_DESCRIPTOR_AND_PAYLOAD_INVENTORIES_MUST_MATCH_EXACTLY"
+
+architecture_boundary:
+  only_cross_module_trace_contract: "TraceArtifact v1"
+  rules:
+    - "S3 predictability must not import transformers/model adapters."
+    - "S4 trajectory must not import transformers/Qwen objects."
+    - "S5 experiment runner orchestrates public interfaces only."
+    - "S1 model/trace must not implement predictability or trajectory analysis."
+    - "Contract/schema edits are S0-owned and require S6 contract review."
 
 sessions:
   S0:
-    name: "ORCHESTRATOR_BOOTSTRAP"
+    name: "ARCHITECT_ORCHESTRATOR_MERGE_CONTROLLER"
     branch: "cspm/orchestrator"
-    active_initially: true
     owns:
       - "CSPM_SOT.yaml"
       - "AGENTS.md"
+      - "contracts/**"
+      - "schemas/**"
+      - "docs/architecture/**"
       - "docs/contracts/**"
       - "docs/decisions/**"
       - "docs/experiments/**"
-      - ".github/**"
-    responsibilities:
-      - "freeze contracts before experiments"
-      - "issue tasks with acceptance criteria"
-      - "maintain experiment registry and gate state"
-      - "integrate only reviewed changes"
-      - "never reinterpret failed gates as passes"
+      - "docs/ERROR_TAXONOMY.md"
+      - "fixtures/spec/**"
+      - "src/cspm/bootstrap.py"
+      - "src/cspm/contracts_reference.py"
+      - "experiments/exp000_bootstrap/**"
+      - "tests/test_bootstrap.py"
+      - "tests/test_contract_migration.py"
+    legacy_bootstrap_note: >-
+      These explicit legacy G0 paths are permanently S0-owned until a later recorded
+      migration moves them. No worker may infer ownership from directory proximity.
   S1:
-    name: "TRACELAB"
-    branch: "cspm/tracelab"
-    active_initially: true
-    owns:
-      - "src/cspm/trace/**"
-      - "tests/trace/**"
-      - "experiments/exp001_trace/**"
-    responsibilities:
-      - "model instrumentation"
-      - "trace capture"
-      - "trace fidelity"
-      - "trace I/O accounting"
+    name: "MODEL_TRACE"
+    branch: "s1/model-trace"
+    owns: ["src/cspm397/adapters/**", "src/cspm397/trace/**", "tests/unit/trace/**", "tests/integration/trace/**"]
   S2:
-    name: "STATE_PREDICTABILITY"
-    branch: "cspm/state"
-    active_initially: true
-    owns:
-      - "src/cspm/state/**"
-      - "tests/state/**"
-      - "experiments/exp002_predictability/**"
-      - "experiments/exp003_compiler_state/**"
-    responsibilities:
-      - "predictability spectrum"
-      - "learned compiler state"
-      - "multi-horizon predictors"
-      - "behavior-preservation probes"
+    name: "ARTIFACT_PROFILER"
+    branch: "s2/artifact-profiler"
+    owns: ["src/cspm397/artifacts/**", "src/cspm397/profiling/**", "tests/unit/artifacts/**", "tests/integration/artifacts/**"]
   S3:
-    name: "SYNAPTIC_MEMORY"
-    branch: "cspm/memory"
-    active_initially: false
-    activation_gate: "G2"
-    owns:
-      - "src/cspm/memory/**"
-      - "tests/memory/**"
-      - "experiments/exp004_memory/**"
+    name: "PREDICTABILITY"
+    branch: "s3/predictability"
+    owns: ["src/cspm397/predictability/**", "tests/unit/predictability/**", "tests/integration/predictability/**"]
   S4:
-    name: "MACRO_COMPILER"
-    branch: "cspm/macro"
-    active_initially: false
-    activation_gate: "G2"
-    owns:
-      - "src/cspm/macro/**"
-      - "tests/macro/**"
-      - "experiments/exp005_macro/**"
+    name: "TRAJECTORY_MDL"
+    branch: "s4/trajectory-mdl"
+    owns: ["src/cspm397/trajectory/**", "tests/unit/trajectory/**", "tests/integration/trajectory/**"]
   S5:
-    name: "RESIDUAL_NEUROCORE"
-    branch: "cspm/neurocore"
-    active_initially: false
-    activation_gate: "G4"
-    owns:
-      - "src/cspm/neurocore/**"
-      - "tests/neurocore/**"
-      - "experiments/exp006_residual/**"
+    name: "EXPERIMENT_RUNNER"
+    branch: "s5/experiment-runner"
+    activation: "after Wave-1 interfaces merge"
+    owns: ["src/cspm397/experiment/**", "configs/**", "tests/integration/experiment/**"]
   S6:
-    name: "RUNTIME_PROFILER"
-    branch: "cspm/runtime"
-    active_initially: false
-    activation_gate: "G5"
-    owns:
-      - "src/cspm/runtime/**"
-      - "tests/runtime/**"
-      - "experiments/exp007_router/**"
-      - "experiments/exp008_e2e/**"
+    name: "SOFTWARE_QA_CI_RED_TEAM"
+    branch: "s6/qa-ci"
+    owns: ["tests/contract/**", "tests/adversarial/**", "tests/regression/**", "scripts/check_scope.py", "scripts/validate_artifact.py", ".github/workflows/**"]
+    responsibilities: ["software correctness", "contract/adversarial/regression tests", "Windows+Ubuntu CI", "scope/import/dependency checks", "corruption/partial-write/path/device failure tests"]
   S7:
-    name: "REVIEWER_CI"
-    branch: "cspm/reviewer"
-    active_initially: true
-    owns:
-      - "tests/reviewer/**"
-      - "experiments/exp009_ablation/**"
-      - "review/**"
-    responsibilities:
-      - "independent reproduction"
-      - "baseline verification"
-      - "statistics and confidence intervals"
-      - "OOD and adversarial checks"
-      - "regression checks"
-      - "review PRs without trusting worker claims"
-  S8:
-    name: "397_TEACHER"
-    branch: "cspm/397-teacher"
-    active_initially: false
-    activation_gate: "G7"
-    owns:
-      - "src/cspm/teacher397/**"
-      - "experiments/exp010_397/**"
+    name: "SCIENTIFIC_AUDITOR_REPRODUCIBILITY"
+    branch: "s7/science-audit"
+    activation: "after runnable synthetic pipeline exists"
+    owns: ["review/science/**", "tests/science/**", "decision_policy.json"]
+    responsibilities: ["leakage audit", "baseline adequacy", "seed/sample/CI audit", "metric/comparison audit", "independent reproduction", "GO_CSPM or NO_GO"]
+
+phase_b:
+  activation_condition: "S7 decision GO_CSPM after 35B-A3B audit"
+  before_go_policy: "NO_IMPLEMENTATION_NO_PREPARATION_NO_BRANCH_TASKS"
+  modules: ["Synaptic Memory", "Macro Compiler", "ChronoRouter", "Residual NeuroCore", "End-to-end Runtime"]
+  session_ids_and_ownership: "freeze only after GO_CSPM using Phase-A evidence"
+  final_397_role: ["offline knowledge teacher", "offline trajectory teacher", "offline macro compiler teacher", "rare difficult-case repair teacher"]
 
 branch_policy:
   base: "main"
   worker_self_merge: false
   cross_session_file_edit: false
-  contract_change_requires:
-    - "explicit S0 task"
-    - "tests"
-    - "S7 review"
-  worker_flow:
-    - "sync latest main"
-    - "read CSPM_SOT.yaml"
-    - "verify assigned ownership"
-    - "implement only assigned task"
-    - "run tests"
-    - "write raw manifest"
-    - "commit"
-    - "open PR"
-    - "emit RAW-HANDOFF"
+  one_pr_one_responsibility: true
+  worker_must_record_base_sha: true
+  contract_change_requires: ["explicit S0 task", "tests", "S6 contract review", "S7 review if scientific semantics change"]
+  deprecated_branches: ["cspm/tracelab", "cspm/state", "cspm/reviewer", "cspm/memory", "cspm/macro", "cspm/neurocore", "cspm/runtime"]
+  migration_exceptions:
+    - id: "G0_PR5_S0_CI_REWORK"
+      pr: 5
+      authorized_session: "S0"
+      normal_owner: "S6"
+      paths: [".github/workflows/ci.yml"]
+      reason: "S6 delegated B007 G0 CI rework to S0 on the already-open migration PR."
+      approval: "S6 independently rereviews the resulting current head before merge."
+      expires: "when PR #5 is merged or closed"
+
+manifest_authority:
+  root_run_manifest:
+    path: "<run>/manifest.json"
+    contract: "RunManifest v1"
+    schema: "contracts/run_manifest_v1.schema.json"
+    authority: "experiment/run identity, metrics, artifact references"
+  trace_manifest:
+    path: "<run>/trace/manifest.json"
+    contract: "TraceArtifact v1"
+    schema: "schemas/trace-v1.schema.json"
+    authority: "trace tensor descriptors, projection, sequence/router metadata, chunk ordering and hashes"
+  checksum_index:
+    path: "<run>/hashes/sha256.json"
+    authority: "checksum index only; never a manifest"
+  complete_sentinel: "<run>/COMPLETE"
+  trace_reference_rule: "root artifacts MUST contain exactly one trace/manifest.json with exact child SHA-256"
+  duplicated_identity_equalities:
+    - "root.run_id == trace.run_id"
+    - "root.code_sha == trace.git_sha"
+    - "root.config_sha256 == trace.config_hash"
+    - "root.seed == trace.seed"
+  mismatch_classification:
+    provenance: "E110"
+    child_manifest_hash: "E320"
+  composition_validator: "src/cspm/contracts_reference.py::validate_run_trace_composition"
+  path_rule: "all artifact paths are run-relative POSIX paths; absolute and .. traversal forbidden"
+  detailed_contract: "docs/contracts/MANIFEST_AUTHORITY.md"
+
+trace_artifact_v1:
+  manifest_path: "trace/manifest.json"
+  schema: "schemas/trace-v1.schema.json"
+  semantic_validator: "src/cspm/contracts_reference.py::validate_trace_manifest_semantics"
+  payload_validator: "src/cspm/contracts_reference.py::validate_trace_payload_summary"
+  bootstrap_reexport: "src/cspm/bootstrap.py re-exports the authoritative validators; it must not contain a divergent trace contract"
+  payload_validation_rule: >-
+    Producers derive tensor names/shapes/dtypes and sequence statistics from actual tensors.
+    Consumers independently recompute all of them from loaded payload bytes and reject any
+    mismatch before analysis. S2/S6 production validators must preserve these rules.
+  storage:
+    tensor: ".safetensors"
+    metadata: ".json"
+    event_log: ".jsonl"
+    chunks: true
+    complete_sentinel: "COMPLETE"
+  axis_symbols:
+    T: "num_tokens"
+    L: "len(selected_layers), not num_layers"
+    D: "signature_dim and projection.output_dim"
+    K: "router.top_k when has_router_trace=true"
+  required_arrays:
+    token_ids: "[T]"
+    sequence_ids: "[T]"
+    positions: "[T]"
+    state_signatures: "[T,L,D]"
+  optional_router_arrays:
+    expert_ids: "[T,L,K]"
+    expert_weights: "[T,L,K]"
+    router_entropy: "[T,L]"
+  descriptor_bijection: >-
+    set(arrays.keys) == set(array_shapes.keys) == set(array_dtypes.keys) ==
+    set(loaded_payload_tensor_names). No extra or missing tensor descriptor is allowed.
+  required_array_shapes:
+    token_ids: "[num_tokens]"
+    sequence_ids: "[num_tokens]"
+    positions: "[num_tokens]"
+    state_signatures: "[num_tokens,len(selected_layers),signature_dim]"
+    router_true_expert_ids: "[num_tokens,len(selected_layers),router.top_k]"
+    router_true_expert_weights: "[num_tokens,len(selected_layers),router.top_k]"
+    optional_router_entropy: "[num_tokens,len(selected_layers)]"
+  dtype_contract:
+    dtype_field_scope: "state_signatures only"
+    dtype_field_allowed: ["float16", "bfloat16", "float32"]
+    dtype_field_equals: "array_dtypes.state_signatures"
+    integer_arrays:
+      names: ["token_ids", "sequence_ids", "positions", "expert_ids"]
+      allowed: ["int32", "int64"]
+    floating_arrays:
+      names: ["state_signatures", "expert_weights", "router_entropy"]
+      allowed: ["float16", "bfloat16", "float32"]
+    observed_rule: "loaded tensor dtypes must exactly equal array_dtypes for every tensor name"
+  required_sequence_stats:
+    unique_count: "must equal num_sequences"
+    min_id: "null for empty trace; otherwise 0"
+    max_id: "null for empty trace; otherwise num_sequences-1"
+    ids_contiguous_zero_based: "must be true"
+    positions_zero_based_contiguous: "must be true"
+    sequences_interleaved: "must be false"
+  sequence_contract:
+    - "num_tokens=0 iff num_sequences=0"
+    - "num_tokens>0 requires 1 <= num_sequences <= num_tokens"
+    - "sequence_ids are exactly contiguous integer ids 0..num_sequences-1 and every id appears"
+    - "within each sequence positions are exactly 0..N-1"
+    - "sequence blocks do not interleave"
+  required_metadata:
+    schema_version: "trace-v1"
+    run_id: "nonempty string"
+    model_id: "nonempty string"
+    model_revision: "nonempty string"
+    git_sha: "full 40-char lowercase hex commit SHA; UNKNOWN forbidden"
+    config_hash: "64-char lowercase sha256"
+    seed: "integer"
+    projection:
+      algorithm: "nonempty string"
+      seed: "integer"
+      input_dim: ">=1"
+      output_dim: ">=1 and MUST equal signature_dim"
+    dtype: "state-signature dtype only; see dtype_contract"
+    signature_dim: ">=1"
+    num_sequences: ">=0 subject to sequence_contract"
+    num_tokens: ">=0"
+    num_layers: ">=1"
+    selected_layers: "nonempty unique layer ids; each 0 <= id < num_layers"
+    has_router_trace: "boolean"
+    created_at: "nonempty timestamp string"
+  router_contract:
+    when_has_router_trace_true:
+      required_metadata:
+        num_experts: ">=1"
+        top_k: ">=1 and <= num_experts"
+        weight_sum_tolerance: "0 < tolerance <= 0.1"
+      required_arrays: ["expert_ids", "expert_weights"]
+      expert_id_rule: "0 <= id < num_experts"
+      expert_weight_rule: "finite, nonnegative, selected weights sum to 1 within tolerance"
+    when_has_router_trace_false: "router metadata and every router descriptor/tensor are forbidden"
+  chunk_semantics:
+    - "num_tokens>0 requires >=1 chunk; num_tokens=0 requires zero chunks"
+    - "indices are contiguous 0..N-1"
+    - "path must equal trace/chunk_<index:05d>.safetensors"
+    - "chunk paths are unique"
+    - "chunk tokens are positive"
+    - "sum(chunk.tokens) == num_tokens"
+    - "on load, each chunk tensor T-axis equals chunk.tokens and non-T axes match global bindings"
+  array_semantics:
+    positions: "zero-based contiguous within sequence; new sequence restarts 0; sequences do not interleave"
+    numeric: "state signatures and router numeric arrays must be finite"
 
 artifact_policy:
-  git:
-    allowed:
-      - "source"
-      - "tests"
-      - "small deterministic fixtures"
-      - "configs"
-      - "schemas"
-      - "manifests"
-      - "small raw metrics"
-    forbidden_by_default:
-      - "model weights"
-      - "large tensors"
-      - "full hidden-state traces"
-      - "large benchmark outputs"
-  raw_formats:
-    tensor:
-      - ".safetensors"
-      - ".npy"
-    event_log:
-      - ".jsonl"
-    config:
-      - ".json"
-      - ".yaml"
-    manifest:
-      - ".json"
-  required_run_identity:
-    - "run_id"
-    - "experiment_id"
-    - "code_sha"
-    - "config_sha256"
-    - "dataset_sha256"
-    - "seed"
-    - "started_at"
-    - "completed_at"
-    - "artifact_path"
-    - "artifact_sha256"
+  immutable_runs: true
+  default_reader_rejects_incomplete: true
+  atomic_chunk_write: ["write .tmp", "fsync", "hash", "validate", "atomic rename"]
+  per_chunk_sha256: true
+  resume_from_last_valid_chunk: true
+  run_layout: ["manifest.json", "config.json", "environment.json", "status.json", "trace/manifest.json", "trace/chunk_XXXXX.safetensors", "hashes/sha256.json", "profiler/events.jsonl", "results/*.json", "logs/events.jsonl", "COMPLETE"]
+  forbidden_serialization: ["pickle", "allow_pickle=True", "arbitrary Python objects"]
+
+error_taxonomy:
+  document: "docs/ERROR_TAXONOMY.md"
+  codes: {E100: CONTRACT, E110: SCHEMA, E200: MODEL_LOAD, E210: TOKENIZER, E220: TRACE, E230: ROUTER, E300: ARTIFACT_WRITE, E310: ARTIFACT_READ, E320: ARTIFACT_CORRUPT, E400: CUDA, E410: OOM, E420: DEVICE, E500: NUMERIC, E510: NAN, E520: INF, E600: PREDICTABILITY, E610: TRAJECTORY, E700: EXPERIMENT, E800: DETERMINISM, E900: INTERNAL}
+  precedence:
+    - "E410 wins over E400 for OOM"
+    - "E510/E520 win over E500 for NaN/Inf"
+    - "missing required artifact/file/sentinel at read stage -> E310"
+    - "present but schema/semantic/provenance/payload contract mismatch -> E110"
+    - "hash mismatch/truncated immutable bytes -> E320"
+
+fixtures:
+  golden_spec: "fixtures/spec/tiny_trace_v1.json"
+  invalid_spec: "fixtures/spec/invalid_trace_v1_cases.json"
+  invalid_case_requirement: "every case has id, stage, exact mutation, expected leaf error code"
+
+scientific_rules:
+  split_unit: "sequence/prompt; never random-token split for final conclusions"
+  fit_train_only: ["normalization", "learned projection calibration", "discretizer", "KMeans", "predictor"]
+  predictability_baselines: ["mean", "persistence", "linear_ridge"]
+  optional_predictability_baselines: ["small_mlp"]
+  predictability_metrics: ["r2", "cosine", "nmse", "mae"]
+  trajectory_tracks: ["state", "expert"]
+  compression_baselines: ["raw_bits", "symbol_entropy", "gzip_or_zlib", "ngram_macro_mdl"]
+  compression_ratio_definition: "RawBits / (EncodedBits + DictionaryBits + IndexBits + MetadataBits)"
+  smoke_seed: 397
+  conclusion_seeds: [397, 398, 399, 400, 401]
+  conclusion_statistics: ["mean", "std", "confidence_interval"]
+  result_lifecycle: ["RAW", "VALIDATED_SOFTWARE", "VALIDATED_SCIENCE", "ACCEPTED"]
+
+synthetic_ground_truth:
+  datasets:
+    SYNTH_RANDOM: {predictability: LOW, compression: LOW}
+    SYNTH_MARKOV: {short_horizon: HIGH, long_horizon: LOWER}
+    SYNTH_PERIODIC: {predictability: HIGH, compression: HIGH}
+    SYNTH_MACRO: {macro_compression: HIGH}
+    SYNTH_PREDICTABLE: {predictability: HIGH}
+    SYNTH_BOTH: {predictability: HIGH, compression: HIGH}
+  rule: "real-model conclusions invalid until analyzers recover known synthetic structure"
+
+model_scale_ladder: ["Mock", "Synthetic", "0.8B", "9B", "35B-A3B", "SCIENTIFIC_AUDIT", "GO_OR_NO_GO", "Phase-B CSPM", "397 teacher"]
+
+waves:
+  W0: {sessions: ["S0", "S6"], goal: "bootstrap contracts + independent software review"}
+  W1: {sessions: ["S1", "S2", "S3", "S4", "S6"], precondition: "G0 PASS"}
+  W2: {sessions: ["S5", "S6"], precondition: "Wave-1 interfaces merged"}
+  W3: {sessions: ["S7", "S6"], precondition: "synthetic pipeline software-valid"}
+  W4: {sessions: ["S0"], goal: "integration + staged model-scale experiments"}
+
+ci_policy:
+  g0_required:
+    os: ["ubuntu-latest", "windows-latest"]
+    python: ["3.11"]
+    checks: ["compile Python source/tests", "bootstrap unit/integration tests", "contract migration tests", "deterministic EXP000 smoke"]
+  before_wave1_worker_merge_expand_to: ["formatting", "lint", "type_check", "unit_tests", "contract_tests", "integration_tests", "adversarial_smoke", "deterministic_smoke", "package_build"]
+  gpu_tests: "optional/manual; never silently skipped when a result depends on GPU behavior"
+  branch_protection:
+    desired: true
+    current_connector_can_configure: false
+    current_status: "NOT_ENFORCED_BY_REMOTE_RULESET"
+    process_fallback: "NO_SELF_MERGE + S6 review + green PR CI"
+    followup_issue: 6
+
+bootstrap_gates:
+  G0:
+    status: "REWORK_ROUND3_PENDING_S6_REREVIEW"
+    requires:
+      - "contracts/schemas frozen enough for Wave-1"
+      - "all G0 reference paths have explicit owners"
+      - "root-vs-trace manifest authority and duplicated provenance equality explicit"
+      - "TraceArtifact axis/cardinality/tensor-inventory/dtype rules frozen and tested"
+      - "payload readers recompute tensor names/shapes/dtypes/sequence statistics"
+      - "error taxonomy precedence explicit"
+      - "golden and invalid fixture specifications actionable"
+      - "deterministic EXP000 with file-byte config/data/artifact hashes"
+      - "NO_OVERWRITE"
+      - "Windows + Ubuntu CI green"
+      - "S6 independent review recommends G0 PASS"
+  W1_UNLOCK: "only after G0 PASS is recorded on merged main"
+
+migration_sequence:
+  - "S0 fixes S6 findings on PR #5 under recorded ownership"
+  - "PR #5 CI must pass Windows+Ubuntu"
+  - "S6 re-reviews PR #5 and issue #1 before merge"
+  - "S0 does NOT self-merge"
+  - "after approved merge, freeze new main SHA"
+  - "create Wave-1 branches/tasks from that merged SHA"
 
 raw_handoff:
   version: "1"
-  required_fields:
-    - "SESSION"
-    - "STATUS"
-    - "TASK"
-    - "BRANCH"
-    - "HEAD"
-    - "BASE"
-    - "COMMANDS"
-    - "TESTS"
-    - "METRICS"
-    - "ARTIFACTS"
-    - "ERRORS"
-    - "DECISION"
-    - "NEXT"
-  allowed_status:
-    - "PASS"
-    - "FAIL"
-    - "BLOCKED"
-    - "PARTIAL"
+  required_fields: ["SESSION", "STATUS", "TASK", "BRANCH", "HEAD", "BASE", "COMMANDS", "TESTS", "METRICS", "ARTIFACTS", "ERRORS", "DECISION", "NEXT"]
+  allowed_status: ["PASS", "FAIL", "BLOCKED", "PARTIAL"]
+  allowed_decisions_base: ["READY_FOR_REVIEW", "REWORK", "BLOCKED"]
+  allowed_decision_extensions:
+    G0: ["G0_PASS_RECOMMENDED", "REWORK", "BLOCKED"]
+    SCIENCE: ["GO_CSPM", "NO_GO", "REWORK", "BLOCKED"]
+  task_specific_extension_rule: "Any additional DECISION value must be declared in the task/issue before execution."
   template: |-
     RAW-HANDOFF v1
     SESSION=<Sx>
@@ -242,226 +387,7 @@ raw_handoff:
     COMMANDS=<json-array>
     TESTS=<json-object>
     METRICS=<json-object>
-    ARTIFACTS=<json-array path+sha256>
+    ARTIFACTS=<json-array>
     ERRORS=<json-array>
-    DECISION=<READY_FOR_REVIEW|REWORK|BLOCKED>
+    DECISION=<allowed decision>
     NEXT=<task_or_none>
-
-contracts:
-  versioning: "semantic contract versioning; never silently mutate a consumed schema"
-  required_contracts:
-    trace_v1:
-      producer: "S1"
-      consumers: ["S2", "S7"]
-    compiler_state_v1:
-      producer: "S2"
-      consumers: ["S3", "S4", "S5", "S7"]
-    memory_v1:
-      producer: "S3"
-      consumers: ["S4", "S6", "S7"]
-    macro_v1:
-      producer: "S4"
-      consumers: ["S5", "S6", "S7"]
-    runtime_event_v1:
-      producer: "S6"
-      consumers: ["S7"]
-
-experiments:
-  EXP000:
-    name: "BOOTSTRAP_PIPELINE"
-    owner: "S0"
-    reviewer: "S7"
-    gate: "G0"
-    purpose: "prove deterministic config -> run -> raw artifact -> manifest -> reproduction pipeline"
-  EXP001:
-    name: "TRACE_FIDELITY"
-    owner: "S1"
-    reviewer: "S7"
-    gate: "G1"
-    measures:
-      - "output/logit drift"
-      - "trace missing rate"
-      - "runtime overhead"
-      - "disk bytes per token"
-  EXP002:
-    name: "PREDICTABILITY_SPECTRUM"
-    owner: "S2"
-    reviewer: "S7"
-    horizons: [1, 2, 4, 8, 16]
-    baselines:
-      - "identity"
-      - "mean"
-      - "linear"
-      - "low_rank"
-      - "nearest_neighbor"
-      - "small_mlp"
-    measures:
-      - "mse"
-      - "cosine"
-      - "r2"
-      - "token_kl"
-      - "topk_overlap"
-      - "next_token_preservation"
-      - "ood_degradation"
-  EXP003:
-    name: "LEARNED_COMPILER_STATE"
-    owner: "S2"
-    reviewer: "S7"
-    representations:
-      - "raw_hidden"
-      - "pca"
-      - "autoencoder"
-      - "predictive_encoder"
-      - "contrastive_predictive_encoder"
-    gate: "G2"
-  EXP004:
-    name: "SYNAPTIC_MEMORY"
-    owner: "S3"
-    reviewer: "S7"
-    gate: "G3"
-    compare_equal_byte_budget:
-      - "dense_kv"
-      - "nearest_neighbor"
-      - "vector_index"
-      - "sparse_synaptic_graph"
-  EXP005:
-    name: "MACRO_COMPILER"
-    owner: "S4"
-    reviewer: "S7"
-    gate: "G4"
-  EXP006:
-    name: "RESIDUAL_NEUROCORE"
-    owner: "S5"
-    reviewer: "S7"
-    gate: "G5"
-    baselines:
-      - "no_correction"
-      - "linear"
-      - "mlp"
-      - "recurrent_residual"
-      - "full_recompute"
-  EXP007:
-    name: "CHRONO_ROUTER"
-    owner: "S6"
-    reviewer: "S7"
-    gate: "G6"
-    fallback_order: [8, 4, 2, 1, "full_compute"]
-  EXP008:
-    name: "END_TO_END"
-    owner: "S6"
-    reviewer: "S7"
-    gate: "G7"
-  EXP009:
-    name: "ABLATION_OOD"
-    owner: "S7"
-    reviewer: "S7_independent_reproduction"
-    ablations:
-      - "minus_memory"
-      - "minus_macro"
-      - "minus_residual"
-      - "minus_router"
-      - "minus_predictive_state"
-      - "minus_prefetch"
-  EXP010:
-    name: "397_TEACHER"
-    owner: "S8"
-    activation_gate: "G7"
-
-gates:
-  G0:
-    status: "PENDING"
-    condition: "bootstrap pipeline reproducible from clean checkout"
-  G1:
-    status: "LOCKED"
-    unlock_after: "G0"
-    condition: "trace capture is faithful, complete, and overhead-accounted"
-  G2:
-    status: "LOCKED"
-    unlock_after: "G1"
-    condition: >-
-      Multi-step compiler-state prediction, including horizon 4, beats simple
-      baselines and preserves downstream behavior on held-out and OOD probes.
-  G3:
-    status: "LOCKED"
-    unlock_after: "G2"
-    condition: "memory method provides useful retrieval/latency/byte-budget tradeoff"
-  G4:
-    status: "LOCKED"
-    unlock_after: "G2"
-    condition: >-
-      Recurrent trajectory structure can be compiled into accepted macros whose
-      saved real compute exceeds lookup+routing+failure costs.
-  G5:
-    status: "LOCKED"
-    unlock_after: "G4"
-    condition: "residual correction recovers behavior cheaper than full recomputation"
-  G6:
-    status: "LOCKED"
-    unlock_after: "G5"
-    condition: "router is calibrated and unsafe false-accept rate is controlled"
-  G7:
-    status: "LOCKED"
-    unlock_after: "G6"
-    condition: >-
-      Full CSPM shows reproducible end-to-end Pareto improvement: target quality
-      loss <=1%, latency improvement >=20%, no large OOD regression, >=3 seeds,
-      and a 95% confidence interval excluding zero improvement.
-
-runtime_metrics:
-  required:
-    - "quality"
-    - "tokens_per_second"
-    - "ttft_ms"
-    - "abat_ms"
-    - "flops_per_token_est"
-    - "ram_bytes_peak"
-    - "vram_bytes_peak"
-    - "disk_bytes_per_token"
-    - "macro_acceptance_rate"
-    - "fallback_rate"
-    - "entry_ms"
-    - "memory_ms"
-    - "router_ms"
-    - "macro_ms"
-    - "residual_ms"
-    - "output_ms"
-    - "fallback_ms"
-    - "io_ms"
-    - "total_ms"
-
-fallback_policy:
-  silent_fallback: false
-  every_fallback_event_requires:
-    - "requested_horizon"
-    - "rejected_reason"
-    - "chosen_fallback"
-    - "confidence"
-    - "fallback_cost_ms"
-
-failure_policy:
-  rule: >-
-    A failed scientific gate is not a software bug by default. Record the failure,
-    test one or two predeclared redesigns, and if the gate still fails, narrow or
-    kill the hypothesis rather than moving success criteria after seeing results.
-  no_posthoc_gate_relaxation: true
-
-initial_activation:
-  active_sessions: ["S0", "S1", "S2", "S7"]
-  waiting_sessions: ["S3", "S4", "S5", "S6", "S8"]
-  immediate_sequence:
-    - "S0: complete Bootstrap v1 and EXP000"
-    - "S7: independently validate EXP000 and contracts"
-    - "S1: start EXP001 only after G0 PASS"
-    - "S2: prepare interfaces but do not claim EXP002 results before G1 PASS"
-
-change_control:
-  SOT_updates:
-    owner: "S0"
-    requires_reason: true
-    science_gate_changes_require:
-      - "pre-result justification"
-      - "S7 approval"
-      - "recorded decision entry"
-  ownership_changes_require:
-    - "S0 approval"
-    - "SOT update before code change"
