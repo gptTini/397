@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import re
 import subprocess
 import sys
@@ -209,6 +210,92 @@ class BootstrapUnitTests(unittest.TestCase):
         authority = (REPO_ROOT / "docs/contracts/MANIFEST_AUTHORITY.md").read_text("utf-8")
         self.assertIn("duplicate artifact paths", authority)
         self.assertIn("validate_run_manifest", authority)
+
+    def test_canonical_json_writer_fails_closed_on_nonfinite_values(self) -> None:
+        nonfinite_cases = {
+            "nan": math.nan,
+            "pos_inf": math.inf,
+            "neg_inf": -math.inf,
+        }
+        for name, value in nonfinite_cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(ValueError):
+                    canonical_json_bytes({"metrics": {"score": value}})
+                with self.assertRaises(ValueError):
+                    canonical_json_bytes(
+                        {"metrics": {"outer": {"deep": [{"value": value}]}}}
+                    )
+
+    def test_root_manifest_validator_rejects_nonfinite_metric_values(self) -> None:
+        nonfinite_cases = {
+            "nan": (math.nan, "NaN"),
+            "pos_inf": (math.inf, "+Infinity"),
+            "neg_inf": (-math.inf, "-Infinity"),
+        }
+        for name, (value, label) in nonfinite_cases.items():
+            manifest = _valid_root_manifest()
+            manifest["metrics"] = {"score": value}
+            with self.subTest(name=name):
+                errors = validate_run_manifest(manifest)
+                self.assertEqual(errors, [f"nonfinite_number_at_metrics.score={label}"])
+                self.assertEqual(errors, validate_manifest_shape(manifest))
+
+    def test_root_manifest_validator_rejects_nested_nonfinite_values(self) -> None:
+        nonfinite_cases = {
+            "nan": (math.nan, "NaN"),
+            "pos_inf": (math.inf, "+Infinity"),
+            "neg_inf": (-math.inf, "-Infinity"),
+        }
+        for name, (value, label) in nonfinite_cases.items():
+            manifest = _valid_root_manifest()
+            manifest["metrics"] = {
+                "outer": {"deep": [0.5, {"value": value}], "other": 1},
+            }
+            with self.subTest(name=name):
+                errors = validate_run_manifest(manifest)
+                self.assertEqual(
+                    errors,
+                    [f"nonfinite_number_at_metrics.outer.deep[1].value={label}"],
+                )
+
+    def test_valid_finite_floats_remain_accepted(self) -> None:
+        manifest = _valid_root_manifest()
+        manifest["metrics"] = {
+            "ratio": 0.25,
+            "tiny": -1.5e-8,
+            "large": 1e308,
+            "zero": 0.0,
+            "nested": {"list": [2.0, 3, {"deep": 4.5}]},
+        }
+        self.assertEqual(validate_run_manifest(manifest), [])
+
+    def test_exp000_style_manifest_with_finite_float_metrics_is_valid(self) -> None:
+        module = _load_exp000_module()
+        config = {
+            "experiment_id": "EXP000",
+            "seed": 397,
+            "sample_count": 32,
+            "generator": "python.random.Random",
+        }
+        manifest = module.build_manifest(
+            run_id="exp000_check",
+            experiment_id="EXP000",
+            code_sha="a" * 40,
+            config=config,
+            dataset_identity={"kind": "synthetic_bootstrap_fixture", "version": "1", "rows": 32},
+            seed=397,
+            started_at="2026-08-20T00:00:00Z",
+            completed_at="2026-08-20T00:01:00Z",
+            artifacts=[{"path": "result.json", "sha256": "d" * 64}],
+            metrics={
+                "sample_count": 32,
+                "weighted_checksum": 263030165,
+                "result_bytes": 512,
+                "mean_ratio": 0.125,
+                "variance": 2.5e-3,
+            },
+        )
+        self.assertEqual(validate_run_manifest(manifest), [])
 
     def test_non_object_root_manifest_fails_closed(self) -> None:
         self.assertEqual(validate_run_manifest([]), ["root_manifest_must_be_object"])

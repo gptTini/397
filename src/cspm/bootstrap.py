@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -34,13 +35,18 @@ _ARTIFACT_FIELDS = {"path", "sha256"}
 
 
 def canonical_json_bytes(value: Any) -> bytes:
-    """Canonical on-disk JSON representation used for both writes and hashes."""
+    """Canonical on-disk JSON representation used for both writes and hashes.
+
+    Serialization fails closed on NaN and +/-Infinity so every emitted artifact
+    remains standards-compliant JSON instead of Python's nonstandard tokens.
+    """
     return (
         json.dumps(
             value,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
+            allow_nan=False,
         )
         + "\n"
     ).encode("utf-8")
@@ -121,6 +127,27 @@ def _is_json_integer(value: Any) -> bool:
     return isinstance(value, float) and value.is_integer()
 
 
+def _collect_nonfinite_number_errors(
+    value: Any,
+    path: str,
+    errors: list[str],
+) -> None:
+    """Record every non-finite float below ``value`` with its exact location."""
+    if isinstance(value, float):
+        if math.isnan(value):
+            errors.append(f"nonfinite_number_at_{path}=NaN")
+        elif math.isinf(value):
+            label = "+Infinity" if value > 0 else "-Infinity"
+            errors.append(f"nonfinite_number_at_{path}={label}")
+        return
+    if isinstance(value, dict):
+        for key in sorted(value):
+            _collect_nonfinite_number_errors(value[key], f"{path}.{key}", errors)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _collect_nonfinite_number_errors(item, f"{path}[{index}]", errors)
+
+
 def validate_run_manifest(manifest: Any) -> list[str]:
     """Mandatory RunManifest v1 reference validation pipeline.
 
@@ -194,8 +221,11 @@ def validate_run_manifest(manifest: Any) -> list[str]:
             if not isinstance(digest, str) or _HEX64.fullmatch(digest) is None:
                 errors.append(f"artifact_{index}_sha256_invalid")
 
-    if not isinstance(manifest.get("metrics"), dict):
+    metrics = manifest.get("metrics")
+    if not isinstance(metrics, dict):
         errors.append("metrics_must_be_object")
+    else:
+        _collect_nonfinite_number_errors(metrics, "metrics", errors)
 
     return errors
 

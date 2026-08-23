@@ -14,7 +14,7 @@ This document removes ambiguity between the root experiment manifest and the Tra
 A root RunManifest is accepted only after the **full mandatory pipeline** passes. JSON-Schema-only validation and partial helper validation are not sufficient substitutes.
 
 1. Apply every structural constraint frozen by `contracts/run_manifest_v1.schema.json`: root object type, exact top-level field set, required fields, constants/patterns, JSON types, non-empty strings, artifact item structure, portable path grammar, SHA formats, and `metrics` object type.
-2. Apply explicit semantic constraints that are not cleanly expressible in the current JSON Schema, including rejection of **duplicate artifact paths**.
+2. Apply explicit semantic constraints that are not cleanly expressible in the current JSON Schema, including rejection of **duplicate artifact paths** and recursive rejection of **non-finite numeric values** (`NaN`, `+Infinity`, `-Infinity`) anywhere inside `metrics`. Canonical JSON serialization fails closed on the same values, so no nonstandard JSON token can ever be written or hashed.
 3. Any failure in either layer is `E110`.
 
 `src/cspm/bootstrap.py::validate_run_manifest` is the stdlib-only reference implementation of this combined pipeline. `validate_manifest_shape` is retained only as a backward-compatible alias to the same full validator; it is not a weaker validation mode. Producers and readers must not implement a separate acceptance rule that can accept a schema-invalid root manifest.
