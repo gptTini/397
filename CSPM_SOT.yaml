@@ -3,7 +3,7 @@ project:
   id: "CSPM397"
   repo: "gptTini/397"
   name: "Chrono-Synaptic Program Machine"
-  status: "G0_REWORK_ROUND3_PENDING_S6_REREVIEW"
+  status: "G0_PASS_WAVE1_READY"
   source_of_truth: "CSPM_SOT.yaml"
   plan_revision: "feasibility-first-2026-08-20-r3"
 
@@ -53,6 +53,7 @@ architecture_boundary:
     - "S5 experiment runner orchestrates public interfaces only."
     - "S1 model/trace must not implement predictability or trajectory analysis."
     - "Contract/schema edits are S0-owned and require S6 contract review."
+    - "src/cspm397/errors.py is forbidden as a shared root dependency; session-specific error wrappers stay inside session-owned trees and use the frozen error taxonomy."
 
 sessions:
   S0:
@@ -71,9 +72,11 @@ sessions:
       - "fixtures/spec/**"
       - "src/cspm/bootstrap.py"
       - "src/cspm/contracts_reference.py"
+      - "src/cspm397/__init__.py"
       - "experiments/exp000_bootstrap/**"
       - "tests/test_bootstrap.py"
       - "tests/test_contract_migration.py"
+      - "tests/test_wave1_unlock.py"
     legacy_bootstrap_note: >-
       These explicit legacy G0 paths are permanently S0-owned until a later recorded
       migration moves them. No worker may infer ownership from directory proximity.
@@ -109,6 +112,16 @@ sessions:
     activation: "after runnable synthetic pipeline exists"
     owns: ["review/science/**", "tests/science/**", "decision_policy.json"]
     responsibilities: ["leakage audit", "baseline adequacy", "seed/sample/CI audit", "metric/comparison audit", "independent reproduction", "GO_CSPM or NO_GO"]
+
+shared_phase_a_infrastructure:
+  package_root:
+    path: "src/cspm397/__init__.py"
+    owner: "S0"
+    policy: "minimal package marker only; no worker-specific API re-exports"
+  root_errors_module:
+    path: "src/cspm397/errors.py"
+    status: "FORBIDDEN"
+    reason: "avoid an unowned cross-session dependency; typed wrappers stay inside session-owned module trees"
 
 phase_b:
   activation_condition: "S7 decision GO_CSPM after 35B-A3B audit"
@@ -321,6 +334,15 @@ synthetic_ground_truth:
 
 model_scale_ladder: ["Mock", "Synthetic", "0.8B", "9B", "35B-A3B", "SCIENTIFIC_AUDIT", "GO_OR_NO_GO", "Phase-B CSPM", "397 teacher"]
 
+wave1_baseline:
+  source_pr: 5
+  g0_merged_main_sha: "ae23913fceb33690037b3146bd5358894a7bd569"
+  s6_decision: "G0_PASS_RECOMMENDED"
+  reviewed_head_sha: "32175f194294c838de5f12627e0226cdb156f0c9"
+  ci_run: 32614073453
+  worker_start_base_sha: "ae23913fceb33690037b3146bd5358894a7bd569"
+  rebase_rule: "If S0 governance changes land first, worker PRs rebase onto current main while preserving this frozen G0 baseline identity."
+
 waves:
   W0: {sessions: ["S0", "S6"], goal: "bootstrap contracts + independent software review"}
   W1: {sessions: ["S1", "S2", "S3", "S4", "S6"], precondition: "G0 PASS"}
@@ -344,7 +366,12 @@ ci_policy:
 
 bootstrap_gates:
   G0:
-    status: "REWORK_ROUND3_PENDING_S6_REREVIEW"
+    status: "PASS"
+    merged_main_sha: "ae23913fceb33690037b3146bd5358894a7bd569"
+    reviewed_head_sha: "32175f194294c6bd5358894a7bd569"
+    review_issue: 1
+    s6_decision: "G0_PASS_RECOMMENDED"
+    ci_run: 32614073453
     requires:
       - "contracts/schemas frozen enough for Wave-1"
       - "all G0 reference paths have explicit owners"
@@ -357,7 +384,10 @@ bootstrap_gates:
       - "NO_OVERWRITE"
       - "Windows + Ubuntu CI green"
       - "S6 independent review recommends G0 PASS"
-  W1_UNLOCK: "only after G0 PASS is recorded on merged main"
+  W1_UNLOCK:
+    status: "UNLOCKED"
+    worker_start_base_sha: "ae23913fceb33690037b3146bd5358894a7bd569"
+    condition: "G0 PASS is recorded on merged main"
 
 migration_sequence:
   - "S0 fixes S6 findings on PR #5 under recorded ownership"
