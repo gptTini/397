@@ -368,7 +368,7 @@ bootstrap_gates:
   G0:
     status: "PASS"
     merged_main_sha: "ae23913fceb33690037b3146bd5358894a7bd569"
-    reviewed_head_sha: "32175f194294c6bd5358894a7bd569"
+    reviewed_head_sha: "32175f194294c838de5f12627e0226cdb156f0c9"
     review_issue: 1
     s6_decision: "G0_PASS_RECOMMENDED"
     ci_run: 32614073453
